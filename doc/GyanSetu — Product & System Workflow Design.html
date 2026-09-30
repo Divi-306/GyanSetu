@@ -1,0 +1,724 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}</style><style>:root{color-scheme:light dark;--md-bg:#fff;--md-text:rgba(0,0,0,.8);--md-muted:rgba(0,0,0,.6);--md-fill:rgba(0,0,0,.04);--md-fill-strong:rgba(0,0,0,.06);--md-rule:rgba(0,0,0,.1);--md-rule-strong:rgba(0,0,0,.16);--md-link:hsl(210 100% 45%)}@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){--md-bg:#0d0d0d;--md-text:rgba(255,255,255,.85);--md-muted:rgba(255,255,255,.6);--md-fill:rgba(255,255,255,.06);--md-fill-strong:rgba(255,255,255,.09);--md-rule:rgba(255,255,255,.14);--md-rule-strong:rgba(255,255,255,.22);--md-link:hsl(210 100% 72%)}}:root[data-theme="dark"]{color-scheme:dark;--md-bg:#0d0d0d;--md-text:rgba(255,255,255,.85);--md-muted:rgba(255,255,255,.6);--md-fill:rgba(255,255,255,.06);--md-fill-strong:rgba(255,255,255,.09);--md-rule:rgba(255,255,255,.14);--md-rule-strong:rgba(255,255,255,.22);--md-link:hsl(210 100% 72%)}:root[data-theme="light"]{color-scheme:light}@media print{:root,:root[data-theme="dark"]{color-scheme:light;--md-bg:#fff;--md-text:rgba(0,0,0,.8);--md-muted:rgba(0,0,0,.6);--md-fill:rgba(0,0,0,.04);--md-fill-strong:rgba(0,0,0,.06);--md-rule:rgba(0,0,0,.1);--md-rule-strong:rgba(0,0,0,.16);--md-link:hsl(210 100% 45%)}}body{background:var(--md-bg);color:var(--md-text);max-width:720px;margin:0 auto;padding:32px;display:flex;flex-direction:column;gap:10px;font:14px/1.55 -apple-system,BlinkMacSystemFont,'SF Pro','Segoe UI',sans-serif;overflow-wrap:break-word}body>:first-child{margin-top:0}h1,h2,h3,h4,h5,h6{margin:6px 0 0;line-height:1.25;font-weight:600;text-wrap:balance}h1{font-size:1.35em}h2{font-size:1.15em;color:var(--md-muted)}h3,h4,h5,h6{font-size:1em}p,ul,ol,blockquote,table,pre,hr{margin:0}strong{font-weight:600}a{color:var(--md-link);text-decoration:none}a:hover{text-decoration:underline}ul,ol{display:flex;flex-direction:column;gap:6px;padding-left:22px}ul{list-style:disc}ol{list-style:decimal}:is(li,td,th)>*+:is(p,ul,ol,blockquote){margin-top:6px}blockquote{display:flex;flex-direction:column;gap:10px;border-left:2px solid var(--md-rule);padding-left:10px;color:var(--md-muted)}:not(pre)>code{background:var(--md-fill);padding:1px 3px;border-radius:4px;font:.92em 'SF Mono',ui-monospace,Menlo,Consolas,monospace}a>code{background:none;color:inherit}pre{background:var(--md-fill);padding:10px 12px;border-radius:6px;overflow-x:auto;font:12px/1.5 'SF Mono',ui-monospace,Menlo,Consolas,monospace;margin-block:4px}pre code{background:none;padding:0;font:inherit}table{width:100%;border-collapse:separate;border-spacing:2px;font:inherit}th,td{padding:6px 8px;border-radius:3px;text-align:left;vertical-align:top}th{background:var(--md-fill-strong);font-weight:600}td{background:var(--md-fill)}:is(th,td) :not(pre)>code{background:transparent}hr{border:0;border-top:1px solid var(--md-rule-strong);margin-block:10px}img{max-width:100%;height:auto;border-radius:4px}</style>
+</head><body>
+<h1>GyanSetu — Product &amp; System Workflow Design</h1>
+<p><em>&quot;Learning continues, even when connectivity doesn't.&quot;</em></p>
+<p>This document defines the product and system design for GyanSetu before any implementation. No application code is included — this is the workflow, architecture, data model, and build plan.</p>
+<hr>
+<h2>A. Product Workflow (student journey)</h2>
+<pre><code>Install app → (has internet?) → Sign up / Login → Home
+   → Browse Course Library → Open Course Details
+   → Download Learning Pack → Study Lessons → Take Quiz
+   → Progress saved locally → Ask AI doubts → Check Scholarships
+   → Check Career Guidance → (connectivity returns) → Auto-sync → Continue
+</code></pre>
+<p>The loop that matters: <strong>Download once → learn indefinitely offline → sync opportunistically.</strong> The server is a <em>convenience for freshness and backup</em>, not a <em>dependency for learning</em>.</p>
+<hr>
+<h2>B. System Workflow — High-Level Architecture</h2>
+<pre class="mermaid">flowchart TB
+    APP[&#34;React Native App&lt;br/&gt;(Expo + Expo Router + TS + Zustand)&#34;]
+    subgraph ONLINE[&#34;Online path&#34;]
+      API[&#34;Node.js + Express API&#34;]
+      PG[&#34;PostgreSQL&#34;]
+      LLM[&#34;Online LLM / API&#34;]
+      API --&gt; PG
+      API --&gt; LLM
+    end
+    subgraph OFFLINE[&#34;Offline path&#34;]
+      SQLITE[&#34;SQLite (local DB)&#34;]
+      FS[&#34;Expo FileSystem&lt;br/&gt;(learning packs, media, PDFs)&#34;]
+      LAI[&#34;Local AI Knowledge&lt;br/&gt;(retrieval over downloaded chunks)&#34;]
+      SQ[&#34;Sync Queue (SQLite table)&#34;]
+    end
+    SYNC[&#34;Sync Engine&lt;br/&gt;(NetInfo-triggered, retry + backoff)&#34;]
+
+    APP --&gt; ONLINE
+    APP --&gt; OFFLINE
+    OFFLINE --&gt; SYNC
+    SYNC --&gt; API
+    API --&gt; SYNC
+</pre>
+<p><strong>Why this works:</strong> every read/write a student makes during a study session hits SQLite/FileSystem first. The app <em>never blocks a UI action waiting on the network</em> — the network is only consulted for downloads, AI when online, scholarship refresh, and the sync engine's background flush.</p>
+<hr>
+<h2>C. Offline Workflow</h2>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Internet lost mid-session</td>
+<td>Banner switches to &quot;🔴 Offline Mode&quot;; no modal, no blocking. App keeps running off SQLite/FileSystem.</td>
+</tr>
+<tr>
+<td>App opened with no internet, previously logged in</td>
+<td>JWT read from secure storage; skip network validation; open Home directly using cached profile + local packs.</td>
+</tr>
+<tr>
+<td>App opened with no internet, never logged in</td>
+<td>Show Login screen with explicit &quot;You need internet to sign in the first time&quot; message — do not fake a login.</td>
+</tr>
+<tr>
+<td>Feature requiring network is tapped offline</td>
+<td>Disable the action visually (not hidden) and show inline text: &quot;Requires internet&quot; rather than a dead click or generic error.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Available offline:</strong> downloaded lessons/PDFs, offline quizzes, progress tracking, notes, offline AI (on downloaded content only), previously fetched scholarship/career data (marked stale).
+<strong>Unavailable offline:</strong> new pack downloads, live sync, online AI, scholarship/career refresh.</p>
+<hr>
+<h2>D. First-Time Install With No Internet (honesty constraint)</h2>
+<p>The APK ships a <strong>small bundled starter pack</strong> (not arbitrary course content):</p>
+<ul>
+<li>1 sample lesson, 1 sample quiz (5 questions), app onboarding/help text, a minimal local knowledge chunk set so the AI assistant has <em>something</em> to answer from.</li>
+</ul>
+<p>This is explicitly <strong>not</strong> a substitute for real courses. The app must say, in-UI, on first offline launch: <em>&quot;You're offline. Try the sample lesson below, or connect to the internet to download full courses.&quot;</em> No claim of full offline capability before any download has occurred.</p>
+<hr>
+<h2>E. Connectivity States</h2>
+<p>Detected via <code>NetInfo</code> + a lightweight bandwidth probe (small ping/latency check or reading <code>NetInfo.details.cellularGeneration</code> / effective type where available).</p>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Detection</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Online (good)</strong></td>
+<td>Connected, latency/throughput above threshold</td>
+<td>Full downloads, sync, online AI, live scholarship/career fetch</td>
+</tr>
+<tr>
+<td><strong>Low bandwidth</strong></td>
+<td>Connected, but slow (2G/3G, high latency, or a failed probe within timeout)</td>
+<td>Auto-select compressed pack variant, text-prioritized lessons, defer large media, warn before large downloads</td>
+</tr>
+<tr>
+<td><strong>Offline</strong></td>
+<td>Not connected</td>
+<td>All online-only actions disabled/queued; offline feature set only</td>
+</tr>
+</tbody>
+</table>
+<p>State is a single global Zustand store (<code>connectivityStore</code>) read by every screen — no per-screen network checks.</p>
+<hr>
+<h2>F. Learning Pack Concept &amp; Lifecycle</h2>
+<p>A <strong>Learning Pack</strong> = lessons + media/PDFs + quiz questions + metadata + a local AI knowledge slice, versioned per course.</p>
+<h3>State machine</h3>
+<pre class="mermaid">stateDiagram-v2
+    [*] --&gt; NOT_DOWNLOADED
+    NOT_DOWNLOADED --&gt; DOWNLOADING: user taps Download
+    DOWNLOADING --&gt; ACTIVE: download verified complete
+    DOWNLOADING --&gt; NOT_DOWNLOADED: failed / cancelled (partial file discarded)
+    ACTIVE --&gt; ACTIVE: used within 7 days (lastUsedAt refreshed)
+    ACTIVE --&gt; ARCHIVED: 7 days unused (auto, compressed)
+    ARCHIVED --&gt; ACTIVE: user restores (needs internet)
+    ARCHIVED --&gt; ARCHIVED: used or kept (resets 7-day sub-timer)
+    ARCHIVED --&gt; DELETE_WARNING: 45 days unused since archive
+    DELETE_WARNING --&gt; ARCHIVED: user chooses Keep (monitoring continues, re-ask in 7 days)
+    DELETE_WARNING --&gt; CLOUD: user chooses Delete AND sync is clean
+    DELETE_WARNING --&gt; PENDING_SYNC: user chooses Delete BUT unsynced data exists
+    PENDING_SYNC --&gt; CLOUD: sync completes, then content deleted
+    CLOUD --&gt; DOWNLOADING: user re-downloads
+</pre>
+<p>Key rule encoded above: <strong>Delete never fires while unsynced student data exists.</strong> It waits in <code>PENDING_SYNC</code>, attempts sync opportunistically, and only removes local <em>content</em> files once the server has acknowledged the student's data.</p>
+<h3>Content vs. student data (critical separation)</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Content data</th>
+<th>Student data</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Examples</td>
+<td>Lesson text/media/PDFs, quiz question bank</td>
+<td>Quiz attempts, progress %, notes, sync queue entries</td>
+</tr>
+<tr>
+<td>Can be archived/compressed</td>
+<td>Yes</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Can be deleted (with confirm)</td>
+<td>Yes, once synced-content is safe to drop</td>
+<td>Only after server-confirmed sync; never silently</td>
+</tr>
+<tr>
+<td>Re-obtainable</td>
+<td>Yes, re-download from server</td>
+<td>No — it's the source of truth until synced</td>
+</tr>
+</tbody>
+</table>
+<pre class="mermaid">flowchart LR
+    A[Student action] --&gt; B{Type?}
+    B --&gt;|Content interaction| C[Read-only: lessons/PDFs/quiz Qs]
+    B --&gt;|Student-generated| D[Write: attempt, progress, note]
+    D --&gt; E[(SQLite: student tables)]
+    E --&gt; F[sync_queue entry]
+    F --&gt;|online| G[POST to API] --&gt; H[(PostgreSQL)]
+    C -.-&gt;|never written back, only re-downloaded| I[(Learning pack files)]
+</pre>
+<hr>
+<h2>G. Storage-Management Workflow</h2>
+<p><strong>Storage Manager</strong> (a dedicated module, not scattered logic) owns:
+<code>checkAvailableStorage · calcPackSize · trackLastUsedAt · evaluateArchiveEligibility · compress/decompress · showStorageWarnings · checkSyncStatusBeforeDelete · restorePack · deleteContentSafely</code></p>
+<h3>Day-by-day policy</h3>
+<ul>
+<li><strong>Day 0–7 (ACTIVE):</strong> every open/lesson-view/quiz-attempt on that pack updates <code>lastUsedAt</code>.</li>
+<li><strong>7 days unused → ARCHIVED (automatic, no confirmation needed — reversible, non-destructive):</strong> content compressed where possible (media re-encoded/removed, text kept), toast: <em>&quot;Python Basics has been archived to save storage.&quot;</em> Progress/metadata/sync-state untouched.</li>
+<li><strong>Restore:</strong> if online → re-fetch full pack, verify checksum, mark ACTIVE. If offline → block with <em>&quot;Internet connection is required to restore this learning pack.&quot;</em></li>
+<li><strong>45 days unused since archive → DELETE_WARNING (blocking confirmation, destructive path):</strong>
+<pre><code>Storage Cleanup
+&#34;You haven&#39;t used Python Basics for 45 days.&#34;
+&#34;It currently uses 75 MB of storage.&#34;
+[ Keep Pack ]   [ Delete Pack ]
+</code></pre>
+<ul>
+<li><strong>Keep</strong> → <code>cleanupDecision = KEEP</code>, stays ARCHIVED, monitored; if still unused after <strong>another 7 days</strong>, re-ask the same dialog (not a silent loop — bounded, user-visible cadence).</li>
+<li><strong>Delete</strong> → run sync-safety check (progress/attempts/notes/pending queue) → if clean, delete local files, state → <code>CLOUD</code>; if not clean, hold in <code>PENDING_SYNC</code>, attempt sync in background, delete content only after ACK.</li>
+</ul>
+</li>
+</ul>
+<h3>Storage-aware adaptation</h3>
+<table>
+<thead>
+<tr>
+<th>Device storage</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>High (plenty free)</td>
+<td>Offer full-quality pack by default</td>
+</tr>
+<tr>
+<td>Limited</td>
+<td>Default to compressed variant; prioritize text + essential lessons; large media optional/deferred</td>
+</tr>
+<tr>
+<td>Critically low</td>
+<td>Block new downloads; surface Storage Manager recommendations (archive candidates, size breakdown); never auto-delete without confirmation</td>
+</tr>
+</tbody>
+</table>
+<pre class="mermaid">flowchart TD
+    U[&#34;7 days unused&#34;] --&gt; ARC[&#34;ARCHIVED (auto, compressed, reversible)&#34;]
+    ARC --&gt; D45[&#34;45 days unused&#34;] --&gt; POP[&#34;Cleanup popup: Keep / Delete&#34;]
+    POP --&gt;|Keep| MON[&#34;Keep monitoring, re-ask in 7 days&#34;] --&gt; D45
+    POP --&gt;|Delete| CHK{Sync clean?}
+    CHK --&gt;|Yes| DEL[&#34;Delete content files → CLOUD&#34;]
+    CHK --&gt;|No| PEND[&#34;Hold: attempt sync in background&#34;] --&gt; DEL
+</pre>
+<hr>
+<h2>H. Sync Workflow</h2>
+<p>Every local mutation that matters (quiz attempt, lesson completed, progress update, note created) is written to SQLite <strong>and</strong> appended to <code>sync_queue</code> in the same local transaction — the UI never waits on the network to consider an action &quot;saved.&quot;</p>
+<pre class="mermaid">sequenceDiagram
+    participant UI
+    participant SQLite
+    participant Queue as sync_queue
+    participant Net as NetInfo
+    participant API
+    UI-&gt;&gt;SQLite: write student data
+    UI-&gt;&gt;Queue: enqueue {type, payload, status: PENDING}
+    UI--&gt;&gt;UI: show &#34;saved locally&#34; (instant)
+    Net--&gt;&gt;Queue: connectivity restored (listener)
+    Queue-&gt;&gt;API: POST batch (oldest first)
+    API--&gt;&gt;Queue: 200 ACK / 409 conflict / 5xx error
+    alt ACK
+        Queue-&gt;&gt;Queue: status = SYNCED
+    else conflict
+        Queue-&gt;&gt;Queue: apply resolution rule, status = SYNCED/RESOLVED
+    else error
+        Queue-&gt;&gt;Queue: retryCount++, backoff, status stays PENDING
+    end
+</pre>
+<p><strong>Conflict rule (kept simple for MVP):</strong> last-write-wins <strong>per field, by timestamp</strong>, except quiz attempts and notes, which are <strong>append-only</strong> (a new attempt never overwrites a prior one — there's nothing to conflict). Progress percentage uses <strong>max(local, server)</strong> — a student is never shown regression.</p>
+<p><code>sync_queue</code> item shape: <code>id, type, payload(json), createdAt, retryCount, status(PENDING/SYNCING/SYNCED/FAILED), lastAttemptAt</code>.</p>
+<hr>
+<h2>I. AI Doubt-Solving Workflow</h2>
+<pre class="mermaid">flowchart TD
+    Q[Student question] --&gt; Online{Online?}
+    Online --&gt;|Yes| LLM[Backend → LLM/API] --&gt; A1[Answer + source + confidence]
+    Online --&gt;|No| RET[Retrieve from downloaded AIKnowledgeChunks]
+    RET --&gt; Found{Enough relevant content?}
+    Found --&gt;|Yes| A2[Local answer + source + confidence]
+    Found --&gt;|No| Hon[&#34;&#39;Couldn&#39;t find enough info in your\ndownloaded material — connect to\nthe internet for a broader answer.&#39;&#34;]
+</pre>
+<p>Non-negotiable: <strong>offline mode never hallucinates past its knowledge base.</strong> Every answer — online or offline — carries a source tag and a confidence indicator; the local path has a hard &quot;insufficient data&quot; exit instead of guessing.</p>
+<hr>
+<h2>J. Voice Workflow</h2>
+<pre><code>Voice input → Speech-to-text → AI processing (online/offline path above) → Answer → Text-to-speech
+</code></pre>
+<ul>
+<li>Online: cloud STT/TTS, Hindi + English.</li>
+<li>Offline: use on-device STT/TTS only where the platform genuinely supports it; if not available, <strong>fall back to text input/output</strong> with a visible note — never claim cloud voice APIs work with no connection.</li>
+</ul>
+<hr>
+<h2>K. Offline Quiz Workflow</h2>
+<pre class="mermaid">flowchart TD
+    Q1[Show question] --&gt; SEL[Student selects answer]
+    SEL --&gt; SAVE[(Write to SQLite immediately)]
+    SAVE --&gt; NEXT{More questions?}
+    NEXT --&gt;|Yes| Q1
+    NEXT --&gt;|No| SCORE[Calculate score locally]
+    SCORE --&gt; PROG[Update StudentProgress]
+    PROG --&gt; ENQ[Enqueue QuizAttemptCreated in sync_queue]
+    ENQ --&gt; LATER[Sync engine flushes when online]
+</pre>
+<p>Durability: each answer is a committed SQLite write the instant it's selected (not batched at submit), so app crash, background/kill, or phone restart mid-quiz loses <strong>at most the current unselected question</strong> — never prior answers. If internet returns mid-quiz, nothing changes UX-wise; the quiz keeps running fully local and syncs only at submit.</p>
+<hr>
+<h2>L. Scholarship Workflow</h2>
+<pre class="mermaid">flowchart LR
+    P[Student profile] --&gt; RULE[Eligibility rules engine]
+    DB[(Scholarship DB, server-synced)] --&gt; RULE
+    RULE --&gt; MATCH[Matches + &#39;why you match&#39; breakdown]
+    MATCH --&gt; DETAIL[Scholarship details:\nlast updated, source, verification status]
+    DETAIL --&gt; LINK[Official application link (external)]
+</pre>
+<p>The app <strong>never asserts final eligibility</strong> — only &quot;you appear to match, based on data last updated X.&quot; Scholarship data fetched online only; offline shows last-cached results clearly labeled stale (e.g., <em>&quot;Showing scholarships as of 3 days ago&quot;</em>).</p>
+<hr>
+<h2>M. Career Guidance Workflow</h2>
+<pre class="mermaid">flowchart LR
+    IN[&#34;Interests + completed courses +\nquiz performance + stated goals&#34;] --&gt; AN[Skill/progress analysis]
+    AN --&gt; PATH[Career paths]
+    PATH --&gt; NEXT[&#34;Explainable next steps\n(e.g. &#39;You finished Python Basics,\nnow learning DSA → next: SQL, projects&#39;)&#34;]
+</pre>
+<p>Recommendations are computed from <strong>local StudentProgress + QuizAttempt data</strong> first (works offline for anything already known), refreshed with server-side career-path data when online.</p>
+<hr>
+<h2>N. Authentication Workflow</h2>
+<pre class="mermaid">flowchart TD
+    SU[Sign Up] --&gt; PROF[Create profile] --&gt; LOG[Login]
+    LOG --&gt; JWT[Receive JWT, store in SecureStore]
+    JWT --&gt; APP[Authenticated app]
+    APP --&gt;|token expired + online| REFRESH[Silent refresh or re-login prompt]
+    APP --&gt;|token expired + offline| OFFOK[&#34;Allow continued access to\nlocal/offline content;\nblock only server-dependent calls&#34;]
+</pre>
+<ul>
+<li>Token stored via Expo SecureStore (never AsyncStorage in plaintext).</li>
+<li>Logout clears token + optionally offers &quot;keep downloaded content&quot; vs. &quot;clear everything&quot; (default: keep content, since it's the student's own device storage).</li>
+<li><strong>Rule:</strong> an expired/missing-refresh token while offline must never lock a returning, previously-authenticated student out of their downloaded courses.</li>
+</ul>
+<hr>
+<h2>O. Error / Failure / Edge-Case Matrix</h2>
+<table>
+<thead>
+<tr>
+<th>Case</th>
+<th>User sees</th>
+<th>System does</th>
+<th>Data lost?</th>
+<th>Recovery</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Internet lost during download</td>
+<td>Progress bar pauses, &quot;Paused — waiting for connection&quot;</td>
+<td>Keeps partial file, resumable chunk offset saved</td>
+<td>No</td>
+<td>Auto-resume on reconnect</td>
+</tr>
+<tr>
+<td>App closed / phone restarted mid-download</td>
+<td>Pack shows &quot;Incomplete&quot; on relaunch</td>
+<td>Partial file kept, resumable</td>
+<td>No</td>
+<td>User taps Resume</td>
+</tr>
+<tr>
+<td>Internet lost during sync</td>
+<td>Sync badge shows &quot;Pending&quot; not &quot;Failed&quot;</td>
+<td>Queue item stays PENDING, retried on reconnect</td>
+<td>No</td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Internet lost during quiz</td>
+<td>Nothing — quiz is local-only anyway</td>
+<td>N/A</td>
+<td>No</td>
+<td>N/A</td>
+</tr>
+<tr>
+<td>App crash mid-quiz</td>
+<td>Last answered question preserved on reopen</td>
+<td>Per-answer commits as in §K</td>
+<td>Only the unsaved current selection</td>
+<td>Resume from last saved question</td>
+</tr>
+<tr>
+<td>Storage full mid-download</td>
+<td>&quot;Not enough storage to complete this download&quot;</td>
+<td>Rolls back partial file, no half-written pack left as ACTIVE</td>
+<td>No</td>
+<td>Free space or pick compressed variant</td>
+</tr>
+<tr>
+<td>Corrupted learning pack (checksum fail)</td>
+<td>&quot;This pack needs to be re-downloaded&quot;</td>
+<td>Marks pack <code>NOT_DOWNLOADED</code>, discards corrupt files, preserves progress/metadata</td>
+<td>No (content only, re-fetchable)</td>
+<td>Re-download</td>
+</tr>
+<tr>
+<td>Failed archive (compression error)</td>
+<td>Pack stays ACTIVE, silent retry next cycle</td>
+<td>Logs StorageEvent, retries later</td>
+<td>No</td>
+<td>Automatic retry</td>
+</tr>
+<tr>
+<td>Failed restore</td>
+<td>&quot;Restore failed — check your connection and try again&quot;</td>
+<td>Pack stays ARCHIVED</td>
+<td>No</td>
+<td>Retry</td>
+</tr>
+<tr>
+<td>Failed sync (repeated)</td>
+<td>Sync badge: &quot;X items pending&quot;</td>
+<td><code>retryCount</code> incremented, exponential backoff, capped</td>
+<td>No</td>
+<td>Manual &quot;Retry now&quot; available</td>
+</tr>
+<tr>
+<td>Expired auth (online)</td>
+<td>Re-login prompt</td>
+<td>Local data untouched</td>
+<td>No</td>
+<td>Re-login</td>
+</tr>
+<tr>
+<td>AI can't find answer</td>
+<td>Explicit &quot;insufficient info&quot; message (§I)</td>
+<td>No fabricated answer stored</td>
+<td>No</td>
+<td>Try online / rephrase</td>
+</tr>
+<tr>
+<td>Server unavailable</td>
+<td>&quot;Server unreachable — showing offline content&quot;</td>
+<td>Falls back to full offline mode</td>
+<td>No</td>
+<td>Retries in background</td>
+</tr>
+<tr>
+<td>Duplicate sync event</td>
+<td>N/A (invisible)</td>
+<td>Server dedupes by client-generated UUID (idempotency key)</td>
+<td>No</td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Local vs server progress conflict</td>
+<td>N/A (invisible, or a subtle &quot;progress updated&quot; toast)</td>
+<td>max(local,server) rule (§H)</td>
+<td>No</td>
+<td>Automatic</td>
+</tr>
+<tr>
+<td>Delete pack while sync pending</td>
+<td>Delete is deferred, user sees &quot;Finishing sync before removing...&quot;</td>
+<td>Held in <code>PENDING_SYNC</code> (§F)</td>
+<td>No</td>
+<td>Automatic once synced</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>P. Screen Navigation Map</h2>
+<pre><code>Splash → Login/SignUp → Home
+Home → Course Library → Course Details → Lesson Viewer → (Quiz → Quiz Result)
+Home → AI Doubt Assistant
+Home → Downloads &amp; Storage → Learning Pack Details → (Storage Cleanup Popup)
+Home → Scholarship Finder
+Home → Career Guidance
+Home → Profile → Sync Status
+Global: Offline Mode indicator (persistent banner, not a screen)
+</code></pre>
+<p>17 required screens map 1:1 onto Expo Router routes; <code>Storage Cleanup Popup</code> and <code>Offline Mode</code> are overlay/state components, not standalone routes.</p>
+<hr>
+<h2>Q. Data Model (server-side entities)</h2>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Key fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>User</strong></td>
+<td>id, name, email, passwordHash, createdAt</td>
+</tr>
+<tr>
+<td><strong>Course</strong></td>
+<td>id, title, description, subjectArea</td>
+</tr>
+<tr>
+<td><strong>Lesson</strong></td>
+<td>id, courseId, order, title, contentType, contentRef</td>
+</tr>
+<tr>
+<td><strong>LearningPack</strong></td>
+<td>id, courseId, version, size, compressedSize, state, downloadedAt, lastUsedAt, archivedAt, cleanupWarningAt, deleteEligibleAt, cleanupDecision, syncStatus, checksum</td>
+</tr>
+<tr>
+<td><strong>LearningPackVersion</strong></td>
+<td>id, packId, versionNumber, releaseNotes, publishedAt</td>
+</tr>
+<tr>
+<td><strong>Quiz</strong></td>
+<td>id, courseId/lessonId, title</td>
+</tr>
+<tr>
+<td><strong>QuizQuestion</strong></td>
+<td>id, quizId, prompt, options(json), correctIndex</td>
+</tr>
+<tr>
+<td><strong>QuizAttempt</strong></td>
+<td>id, userId, quizId, answers(json), score, attemptedAt, synced</td>
+</tr>
+<tr>
+<td><strong>StudentProgress</strong></td>
+<td>id, userId, courseId, percentComplete, lastUpdated</td>
+</tr>
+<tr>
+<td><strong>Note</strong></td>
+<td>id, userId, lessonId, text, createdAt, synced</td>
+</tr>
+<tr>
+<td><strong>SyncQueue</strong></td>
+<td>id, userId, type, payload(json), createdAt, retryCount, status, lastAttemptAt</td>
+</tr>
+<tr>
+<td><strong>Scholarship</strong></td>
+<td>id, name, eligibilityRules(json), sourceUrl, lastVerifiedAt</td>
+</tr>
+<tr>
+<td><strong>CareerRecommendation</strong></td>
+<td>id, userId, pathName, recommendedSkills(json), generatedAt</td>
+</tr>
+<tr>
+<td><strong>AIKnowledgeChunk</strong></td>
+<td>id, courseId, text, embeddingRef, sourceLabel</td>
+</tr>
+<tr>
+<td><strong>StorageEvent</strong></td>
+<td>id, userId, packId, eventType(archive/restore/delete/warn), timestamp</td>
+</tr>
+</tbody>
+</table>
+<p>Relationships: <code>Course 1—N Lesson</code>, <code>Course 1—N LearningPack(version history)</code>, <code>Course 1—N Quiz 1—N QuizQuestion</code>, <code>User 1—N QuizAttempt/Note/StudentProgress/SyncQueue</code>.</p>
+<hr>
+<h2>R. Local SQLite Structure (device)</h2>
+<pre><code>courses(id, title, meta_json, synced_at)
+lessons(id, course_id, order, title, content_path, type)
+learning_packs(id, course_id, version, size, state, last_used_at,
+                archived_at, cleanup_decision, checksum)
+quiz_questions(id, quiz_id, prompt, options_json, correct_index)
+quiz_attempts(id, quiz_id, answers_json, score, attempted_at, synced INTEGER)
+progress(course_id, percent, updated_at, synced INTEGER)
+notes(id, lesson_id, text, created_at, synced INTEGER)
+sync_queue(id, type, payload_json, created_at, retry_count, status, last_attempt_at)
+ai_chunks(id, course_id, text, source_label)
+</code></pre>
+<p><code>synced</code>/<code>status</code> columns are how the Sync Engine finds work without scanning everything.</p>
+<hr>
+<h2>S. Backend API Structure (Node + Express)</h2>
+<pre><code>POST   /auth/signup
+POST   /auth/login
+POST   /auth/refresh
+
+GET    /courses
+GET    /courses/:id
+GET    /courses/:id/pack           # metadata + download URL
+GET    /packs/:id/download         # streamed/chunked file
+
+POST   /sync/batch                 # accepts array of sync_queue items, idempotent by client UUID
+GET    /sync/status
+
+POST   /ai/ask                     # online LLM path
+GET    /scholarships?profile=...
+GET    /career/recommendations?userId=...
+
+GET    /progress/:userId
+POST   /progress                   # upsert, used by sync batch too
+</code></pre>
+<p>All mutating endpoints are <strong>idempotent</strong> (client-generated UUID per event) so retried/duplicate sync sends are safe.</p>
+<hr>
+<h2>T. Module / Component Architecture</h2>
+<p><strong>Mobile app:</strong></p>
+<pre><code>/app                → Expo Router screens (1:1 with §P)
+/store               → Zustand: authStore, connectivityStore, downloadStore, syncStore
+/db                  → SQLite schema + query helpers
+/services
+  /storageManager.ts → §G logic, single source of truth
+  /syncEngine.ts     → §H logic
+  /aiService.ts      → routes online/offline per §I
+  /downloadManager.ts→ pack download/resume/verify
+/components          → shared UI (OfflineBanner, SyncBadge, PackCard, CleanupModal)
+</code></pre>
+<p><strong>Backend:</strong></p>
+<pre><code>/routes    → auth, courses, packs, sync, ai, scholarships, career
+/services  → same domain split, mirrors client logic where relevant (eligibility rules, conflict resolution)
+/db        → PostgreSQL models (Prisma or plain SQL — either is fine for hackathon scope)
+</code></pre>
+<hr>
+<h2>U. MVP Classification</h2>
+<table>
+<thead>
+<tr>
+<th>Must actually work (core demo)</th>
+<th>Can be mocked/simplified</th>
+<th>Secondary (nice-to-have)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Login/signup + JWT</td>
+<td>Career &quot;AI mentor suggestion&quot; text (static per profile, not live-generated)</td>
+<td>Voice input/output</td>
+</tr>
+<tr>
+<td>Course download → real local SQLite + FileSystem storage</td>
+<td>Scholarship data (seed a small static table, real matching logic against it)</td>
+<td>Compression tuning (approximate, don't need real codec optimization)</td>
+</tr>
+<tr>
+<td>Offline mode detection (NetInfo)</td>
+<td>Online LLM call can be a real API call with a simple prompt — don't fake this, it's your biggest wow-factor</td>
+<td>45-day delete-warning cadence (can be time-accelerated in demo via a debug button)</td>
+</tr>
+<tr>
+<td>Offline AI retrieval with real source-tag + &quot;insufficient info&quot; fallback</td>
+<td></td>
+<td>Multi-language UI translation (Hindi strings can be partial)</td>
+</tr>
+<tr>
+<td>Real offline quiz with per-answer local commits</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Real sync queue + sync-on-reconnect</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Learning pack state machine (Active/Archived/Cloud) — at least Active↔Archived↔Cloud transitions working</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>Storage cleanup popup logic (7-day and 45-day triggers) — use short debug timers (e.g. 30 sec / 2 min) for live demo</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2>V. Recommended Implementation Order</h2>
+<ol>
+<li><strong>Foundations:</strong> Expo app scaffold + Router + Zustand stores + SQLite schema (§R) — before any feature.</li>
+<li><strong>Auth:</strong> signup/login/JWT, SecureStore — unblocks everything else.</li>
+<li><strong>Course Library + Course Details (read-only, server-backed):</strong> prove online fetch works.</li>
+<li><strong>Download Manager:</strong> real pack download → SQLite + FileSystem write → <code>ACTIVE</code> state. This is the architectural linchpin; get it right before building on top.</li>
+<li><strong>Lesson Viewer + offline read path:</strong> confirm content renders with zero network calls once downloaded.</li>
+<li><strong>Offline Quiz + local commit + sync_queue write:</strong> core &quot;learning continues&quot; proof point #1.</li>
+<li><strong>Sync Engine:</strong> connectivity listener → batch flush → conflict rule. Test by toggling airplane mode repeatedly.</li>
+<li><strong>Storage Manager + state machine (Active→Archived→Cloud) + Cleanup popup:</strong> your standout differentiator — build with fast debug timers first, tune to real 7/45-day constants last.</li>
+<li><strong>AI Doubt Assistant:</strong> offline retrieval path first (works without any external dependency), then wire the online LLM path.</li>
+<li><strong>Scholarship + Career screens:</strong> lowest technical risk, do last, can be simplified per §U without hurting the core narrative.</li>
+<li><strong>Polish pass:</strong> offline banner consistency, sync status badge, error states from §O — do this only once 1–9 work, since these are cross-cutting and easy to retrofit.</li>
+</ol>
+<p>This order front-loads the two things that make GyanSetu <em>not</em> &quot;just an LMS with a download button&quot; — the download/offline pipeline (step 4–6) and the storage lifecycle (step 8) — so if hackathon time runs out, what's missing is scholarships/career polish, not the core thesis.</p>
+
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+</body></html>

@@ -1,0 +1,269 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}</style><style>:root{color-scheme:light dark;--md-bg:#fff;--md-text:rgba(0,0,0,.8);--md-muted:rgba(0,0,0,.6);--md-fill:rgba(0,0,0,.04);--md-fill-strong:rgba(0,0,0,.06);--md-rule:rgba(0,0,0,.1);--md-rule-strong:rgba(0,0,0,.16);--md-link:hsl(210 100% 45%)}@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])){--md-bg:#0d0d0d;--md-text:rgba(255,255,255,.85);--md-muted:rgba(255,255,255,.6);--md-fill:rgba(255,255,255,.06);--md-fill-strong:rgba(255,255,255,.09);--md-rule:rgba(255,255,255,.14);--md-rule-strong:rgba(255,255,255,.22);--md-link:hsl(210 100% 72%)}}:root[data-theme="dark"]{color-scheme:dark;--md-bg:#0d0d0d;--md-text:rgba(255,255,255,.85);--md-muted:rgba(255,255,255,.6);--md-fill:rgba(255,255,255,.06);--md-fill-strong:rgba(255,255,255,.09);--md-rule:rgba(255,255,255,.14);--md-rule-strong:rgba(255,255,255,.22);--md-link:hsl(210 100% 72%)}:root[data-theme="light"]{color-scheme:light}@media print{:root,:root[data-theme="dark"]{color-scheme:light;--md-bg:#fff;--md-text:rgba(0,0,0,.8);--md-muted:rgba(0,0,0,.6);--md-fill:rgba(0,0,0,.04);--md-fill-strong:rgba(0,0,0,.06);--md-rule:rgba(0,0,0,.1);--md-rule-strong:rgba(0,0,0,.16);--md-link:hsl(210 100% 45%)}}body{background:var(--md-bg);color:var(--md-text);max-width:720px;margin:0 auto;padding:32px;display:flex;flex-direction:column;gap:10px;font:14px/1.55 -apple-system,BlinkMacSystemFont,'SF Pro','Segoe UI',sans-serif;overflow-wrap:break-word}body>:first-child{margin-top:0}h1,h2,h3,h4,h5,h6{margin:6px 0 0;line-height:1.25;font-weight:600;text-wrap:balance}h1{font-size:1.35em}h2{font-size:1.15em;color:var(--md-muted)}h3,h4,h5,h6{font-size:1em}p,ul,ol,blockquote,table,pre,hr{margin:0}strong{font-weight:600}a{color:var(--md-link);text-decoration:none}a:hover{text-decoration:underline}ul,ol{display:flex;flex-direction:column;gap:6px;padding-left:22px}ul{list-style:disc}ol{list-style:decimal}:is(li,td,th)>*+:is(p,ul,ol,blockquote){margin-top:6px}blockquote{display:flex;flex-direction:column;gap:10px;border-left:2px solid var(--md-rule);padding-left:10px;color:var(--md-muted)}:not(pre)>code{background:var(--md-fill);padding:1px 3px;border-radius:4px;font:.92em 'SF Mono',ui-monospace,Menlo,Consolas,monospace}a>code{background:none;color:inherit}pre{background:var(--md-fill);padding:10px 12px;border-radius:6px;overflow-x:auto;font:12px/1.5 'SF Mono',ui-monospace,Menlo,Consolas,monospace;margin-block:4px}pre code{background:none;padding:0;font:inherit}table{width:100%;border-collapse:separate;border-spacing:2px;font:inherit}th,td{padding:6px 8px;border-radius:3px;text-align:left;vertical-align:top}th{background:var(--md-fill-strong);font-weight:600}td{background:var(--md-fill)}:is(th,td) :not(pre)>code{background:transparent}hr{border:0;border-top:1px solid var(--md-rule-strong);margin-block:10px}img{max-width:100%;height:auto;border-radius:4px}</style>
+</head><body>
+<h1>GyanSetu — Build Guide (From Scratch)</h1>
+<p>A phased, checklist-driven guide to actually build GyanSetu, following the order and architecture from the workflow design doc. Each phase has: what you're building, exact setup/commands, files to create, and a <strong>&quot;done when&quot;</strong> test — don't move to the next phase until that test passes for real, on a real device/emulator with airplane mode toggled, not just in your head.</p>
+<p>Total: 12 phases. Phases 1–8 are the non-negotiable core. 9–12 can compress if time runs short.</p>
+<hr>
+<h2>Phase 0 — Prerequisites &amp; accounts (30 min)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Node.js LTS installed, <code>npm</code> or <code>pnpm</code> working</li>
+<li><input disabled="" type="checkbox"> Expo CLI: <code>npm install -g eas-cli</code> (EAS not required for dev, but useful later)</li>
+<li><input disabled="" type="checkbox"> Android Studio (emulator) or a physical Android phone with Expo Go, <strong>or</strong> Xcode/iOS simulator on Mac</li>
+<li><input disabled="" type="checkbox"> PostgreSQL installed locally, or a free hosted instance (Neon, Supabase, Railway — any works for a hackathon)</li>
+<li><input disabled="" type="checkbox"> A code editor with TypeScript support</li>
+<li><input disabled="" type="checkbox"> Git repo initialized, <code>.gitignore</code> with <code>node_modules</code>, <code>.env</code></li>
+</ul>
+<p><strong>Done when:</strong> you can run <code>npx expo --version</code> and connect to your Postgres instance with a client (psql, TablePlus, or Postgres extension in your editor).</p>
+<hr>
+<h2>Phase 1 — Project scaffolding (1–2 hrs)</h2>
+<h3>1a. Mobile app</h3>
+<pre><code class="language-bash">npx create-expo-app@latest gyansetu-app --template
+cd gyansetu-app
+npx expo install expo-router expo-sqlite expo-file-system expo-secure-store expo-network @react-native-community/netinfo
+npm install zustand zod
+</code></pre>
+<p>Set up Expo Router file-based structure:</p>
+<pre><code>app/
+  _layout.tsx
+  index.tsx              # → redirects to splash or home based on auth state
+  (auth)/login.tsx
+  (auth)/signup.tsx
+  (tabs)/_layout.tsx
+  (tabs)/home.tsx
+  (tabs)/courses/index.tsx
+  (tabs)/courses/[id].tsx
+  (tabs)/downloads.tsx
+  (tabs)/scholarships.tsx
+  (tabs)/career.tsx
+  (tabs)/profile.tsx
+  lesson/[id].tsx
+  quiz/[id].tsx
+  quiz/[id]/result.tsx
+</code></pre>
+<p>Create the base folders from the module architecture:</p>
+<pre><code>store/        (authStore.ts, connectivityStore.ts, downloadStore.ts, syncStore.ts)
+db/           (schema.ts, client.ts, queries/)
+services/     (storageManager.ts, syncEngine.ts, aiService.ts, downloadManager.ts)
+components/   (OfflineBanner.tsx, SyncBadge.tsx, PackCard.tsx, CleanupModal.tsx)
+</code></pre>
+<p><strong>Done when:</strong> <code>npx expo start</code> launches, and you can navigate between two placeholder screens (e.g. Home and Courses) using Expo Router.</p>
+<h3>1b. Backend</h3>
+<pre><code class="language-bash">mkdir gyansetu-api &amp;&amp; cd gyansetu-api
+npm init -y
+npm install express cors dotenv bcrypt jsonwebtoken zod pg
+npm install -D typescript ts-node-dev @types/express @types/node
+npx tsc --init
+</code></pre>
+<pre><code>src/
+  index.ts
+  routes/ (auth.ts, courses.ts, packs.ts, sync.ts, ai.ts, scholarships.ts, career.ts)
+  services/
+  db/ (pool.ts, migrations/)
+  middleware/ (auth.ts, validate.ts)
+</code></pre>
+<p><strong>Done when:</strong> <code>GET /health</code> returns <code>200 { status: &quot;ok&quot; }</code> from a running Express server, callable from your phone/emulator over your local network (same Wi-Fi, use your machine's LAN IP, not <code>localhost</code>).</p>
+<h3>1c. Database</h3>
+<p>Write raw SQL migrations (or use Prisma if you prefer — either is fine) for the tables in the workflow doc's data model (User, Course, Lesson, LearningPack, Quiz, QuizQuestion, QuizAttempt, StudentProgress, Note, SyncQueue, Scholarship, CareerRecommendation, AIKnowledgeChunk, StorageEvent).</p>
+<p><strong>Done when:</strong> all tables exist in Postgres and you can insert/select a test row in each from a SQL client.</p>
+<hr>
+<h2>Phase 2 — Authentication (2–3 hrs)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Backend: <code>POST /auth/signup</code> (bcrypt hash password, insert User), <code>POST /auth/login</code> (verify, issue JWT), <code>POST /auth/refresh</code></li>
+<li><input disabled="" type="checkbox"> Mobile: Login/Signup screens with Zod-validated forms</li>
+<li><input disabled="" type="checkbox"> Store JWT in <code>expo-secure-store</code>, hydrate <code>authStore</code> on app launch</li>
+<li><input disabled="" type="checkbox"> Route guard: <code>app/_layout.tsx</code> redirects to <code>(auth)/login</code> if no valid session, else to <code>(tabs)/home</code></li>
+<li><input disabled="" type="checkbox"> Offline rule: if a token exists in SecureStore but there's no internet, <strong>still allow entry</strong> to the app (don't block on a network validation call)</li>
+</ul>
+<p><strong>Done when:</strong> you can sign up, get logged out, log back in, force-quit the app, reopen it in airplane mode, and still land on Home (not get bounced to Login).</p>
+<hr>
+<h2>Phase 3 — Course Library (read-only, online) (2 hrs)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Backend: <code>GET /courses</code>, <code>GET /courses/:id</code></li>
+<li><input disabled="" type="checkbox"> Seed 4–5 courses in Postgres (match your earlier mockups: Python Basics, DBMS, Computer Networks, OS, DSA)</li>
+<li><input disabled="" type="checkbox"> Mobile: Course Library screen fetches and lists courses; Course Details screen shows lessons/metadata</li>
+<li><input disabled="" type="checkbox"> <code>connectivityStore</code>: wire up <code>NetInfo.addEventListener</code>, expose <code>online | lowBandwidth | offline</code></li>
+</ul>
+<p><strong>Done when:</strong> courses load live from your backend, and toggling airplane mode flips a visible &quot;Offline&quot; banner without crashing the screen.</p>
+<hr>
+<h2>Phase 4 — Download Manager (the linchpin) (4–6 hrs)</h2>
+<p>This is the phase to <em>not</em> rush — everything else depends on it.</p>
+<ul>
+<li><input disabled="" type="checkbox"> Backend: <code>GET /courses/:id/pack</code> (metadata + download URL), <code>GET /packs/:id/download</code> (serve a zipped bundle of lesson JSON + any media/PDFs)</li>
+<li><input disabled="" type="checkbox"> Mobile <code>downloadManager.ts</code>:
+<ul>
+<li>Use <code>expo-file-system</code> <code>createDownloadResumable</code> so downloads survive app backgrounding and can resume after connection loss</li>
+<li>On completion: verify checksum, unzip/write into a per-course directory under <code>FileSystem.documentDirectory</code></li>
+<li>Write a row into local SQLite <code>learning_packs</code> with <code>state = ACTIVE</code>, <code>downloaded_at</code>, <code>last_used_at</code></li>
+<li>On failure/cancel: discard partial file, keep pack <code>NOT_DOWNLOADED</code> — never leave a half-written pack marked <code>ACTIVE</code></li>
+</ul>
+</li>
+<li><input disabled="" type="checkbox"> UI: download progress bar on Course Details, &quot;Available Offline&quot; badge once complete</li>
+</ul>
+<p><strong>Done when:</strong> you can start a download, kill the app mid-download, reopen, and resume/complete it — and the resulting content is readable with Wi-Fi fully off.</p>
+<hr>
+<h2>Phase 5 — Lesson Viewer (offline read path) (2–3 hrs)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Read lesson content straight from local SQLite + FileSystem — <strong>zero network calls</strong> on this screen once a pack is downloaded</li>
+<li><input disabled="" type="checkbox"> Update <code>learning_packs.last_used_at</code> every time a lesson from that pack is opened</li>
+<li><input disabled="" type="checkbox"> Mark lesson complete → write to local <code>progress</code> table, enqueue a <code>LessonCompleted</code> sync item (queue logic comes in Phase 7, just write the row for now)</li>
+</ul>
+<p><strong>Done when:</strong> with airplane mode on, you can open any downloaded course, browse every lesson, and mark one complete, with the UI never showing a loading spinner waiting on network.</p>
+<hr>
+<h2>Phase 6 — Offline Quiz (3–4 hrs)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Local <code>quiz_questions</code> table populated from the downloaded pack</li>
+<li><input disabled="" type="checkbox"> Quiz screen: each answer selection writes immediately to local <code>quiz_attempts</code> in progress (not just at submit)</li>
+<li><input disabled="" type="checkbox"> Score calculated locally at submit; write final attempt row; enqueue <code>QuizAttemptCreated</code></li>
+<li><input disabled="" type="checkbox"> Kill-test: force-quit mid-quiz after answering 2 of 5 questions, reopen — first 2 answers should still be there</li>
+</ul>
+<p><strong>Done when:</strong> a full quiz attempt, start to score screen, works with the device in airplane mode, and survives an app kill mid-quiz with no answer loss.</p>
+<hr>
+<h2>Phase 7 — Sync Engine (3–4 hrs)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Backend: <code>POST /sync/batch</code> — accepts an array of queue items, dedupes by client-generated UUID, upserts into the right tables, returns per-item ACK/error</li>
+<li><input disabled="" type="checkbox"> Mobile <code>syncEngine.ts</code>:
+<ul>
+<li>Listens for connectivity restored (<code>NetInfo</code> transition to online)</li>
+<li>Reads all <code>PENDING</code> rows from <code>sync_queue</code>, sends in a batch</li>
+<li>On ACK: mark <code>SYNCED</code>. On failure: increment <code>retryCount</code>, exponential backoff, leave <code>PENDING</code></li>
+<li>Conflict rule: progress uses <code>max(local, server)</code>; quiz attempts/notes are append-only (no conflict possible)</li>
+</ul>
+</li>
+<li><input disabled="" type="checkbox"> UI: <code>SyncBadge</code> component showing &quot;X items pending&quot; / &quot;All synced&quot; / &quot;Syncing...&quot;</li>
+</ul>
+<p><strong>Done when:</strong> you can go through Phases 5–6 fully offline, then flip Wi-Fi back on, and watch the sync badge go from &quot;3 pending&quot; to &quot;All synced&quot; without touching anything — and confirm the rows actually landed in Postgres.</p>
+<hr>
+<h2>Phase 8 — Storage Manager &amp; Lifecycle (4–5 hrs)</h2>
+<p>This is your differentiator — budget real time for it.</p>
+<ul>
+<li><input disabled="" type="checkbox"> <code>storageManager.ts</code>: implement the state machine from the design doc — <code>evaluateArchiveEligibility()</code> checks <code>last_used_at</code> against a <strong>configurable threshold</strong> (use an env/config constant, not a hardcoded <code>7 * 24 * 60 * 60 * 1000</code> — you'll want to shrink this for demos)</li>
+<li><input disabled="" type="checkbox"> Background check (on app foreground, or a lightweight interval): any <code>ACTIVE</code> pack unused past the threshold → compress/reduce, set <code>state = ARCHIVED</code>, <code>archived_at = now</code>, toast notification</li>
+<li><input disabled="" type="checkbox"> <code>ARCHIVED</code> pack unused past the second threshold (45 days, same config pattern) → show <code>CleanupModal</code> (Keep / Delete)
+<ul>
+<li>Keep → <code>cleanup_decision = KEEP</code>, stay archived, re-check after another 7-day-equivalent window</li>
+<li>Delete → check <code>syncStatus</code> across that course's progress/attempts/notes; if clean, delete files, <code>state = CLOUD</code>; if not, hold and retry after sync</li>
+</ul>
+</li>
+<li><input disabled="" type="checkbox"> Downloads &amp; Storage screen: list packs grouped by state (Active/Archived/Cloud), storage bar, Restore button (blocked with a message if offline)</li>
+</ul>
+<p><strong>Done when:</strong> with your debug thresholds set to e.g. 30 seconds / 2 minutes, you can watch a pack go <code>ACTIVE → ARCHIVED → cleanup popup → CLOUD</code> live, restore a <code>CLOUD</code> pack back to <code>ACTIVE</code>, and confirm a pack with an unsynced quiz attempt refuses to fully delete until synced.</p>
+<hr>
+<h2>Phase 9 — AI Doubt Assistant (3–4 hrs)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Backend: <code>POST /ai/ask</code> — forwards to your chosen LLM API with the student's question (+ course context if available)</li>
+<li><input disabled="" type="checkbox"> Mobile <code>aiService.ts</code>:
+<ul>
+<li>If online → call <code>/ai/ask</code>, render answer + source/confidence</li>
+<li>If offline → simple retrieval over local <code>ai_chunks</code> (even basic keyword/substring matching is fine for a hackathon — you don't need real embeddings unless you have time) → if a relevant chunk is found, answer from it with a source tag; if not, show the explicit &quot;couldn't find enough information&quot; message — <strong>never fall through to a generic/fabricated answer</strong></li>
+</ul>
+</li>
+<li><input disabled="" type="checkbox"> Chat UI screen wired to this service instead of the mocked prototype from before</li>
+</ul>
+<p><strong>Done when:</strong> you can ask the same question with Wi-Fi on (get a real LLM answer) and with Wi-Fi off (get either a sourced local answer or the honest &quot;not enough info&quot; message — never a hallucination).</p>
+<hr>
+<h2>Phase 10 — Scholarships &amp; Career (2–3 hrs, can simplify)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Seed a small <code>scholarships</code> table (4–6 rows) with <code>eligibility_rules</code> as JSON</li>
+<li><input disabled="" type="checkbox"> Backend: <code>GET /scholarships?profile=...</code> runs simple rule matching (age/category/course/income thresholds — plain JS conditionals are fine, no need for a rules engine library)</li>
+<li><input disabled="" type="checkbox"> Mobile: Scholarship screen shows matches with &quot;why you match&quot; and <code>lastVerifiedAt</code>; cache last successful fetch locally so offline shows stale-but-labeled data</li>
+<li><input disabled="" type="checkbox"> Career screen: compute suggested next steps from local <code>progress</code>/<code>quiz_attempts</code> data (can be simple threshold logic: e.g. &quot;if course X complete and course Y not started, recommend Y&quot;)</li>
+</ul>
+<p><strong>Done when:</strong> matches reflect a real (even if simple) rule check against a test profile, and both screens degrade gracefully offline (showing cached/stale data, not a blank error screen).</p>
+<hr>
+<h2>Phase 11 — Error States &amp; Polish (2–3 hrs)</h2>
+<p>Go through the error/edge-case matrix from the design doc one row at a time and manually trigger each:</p>
+<ul>
+<li><input disabled="" type="checkbox"> Kill Wi-Fi mid-download → confirm resume works</li>
+<li><input disabled="" type="checkbox"> Fill device storage (or fake a low-storage check) → confirm blocked download with a clear message</li>
+<li><input disabled="" type="checkbox"> Corrupt a pack file manually → confirm checksum failure triggers re-download prompt, not a crash</li>
+<li><input disabled="" type="checkbox"> Force a duplicate sync send → confirm backend dedupes cleanly</li>
+<li><input disabled="" type="checkbox"> Expire a JWT manually → confirm offline access to downloaded content still works</li>
+</ul>
+<p>Also at this stage: consistent <code>OfflineBanner</code> placement across all screens, consistent color/copy for Active/Archived/Cloud states, loading skeletons instead of blank screens.</p>
+<p><strong>Done when:</strong> nothing in the app shows a raw error, a blank white screen, or an unhandled crash for any case in the matrix.</p>
+<hr>
+<h2>Phase 12 — Demo Prep (1–2 hrs)</h2>
+<ul>
+<li><input disabled="" type="checkbox"> Set storage-lifecycle thresholds to demo-friendly values (see Phase 8) via a single config flag you can flip back before judging if asked to show &quot;real&quot; behavior</li>
+<li><input disabled="" type="checkbox"> Pre-seed one course as already downloaded and one as not, so the demo doesn't wait on a live download</li>
+<li><input disabled="" type="checkbox"> Rehearse the exact 21-step demo flow from the design doc, with a stopwatch — trim anything that runs long</li>
+<li><input disabled="" type="checkbox"> Have a fallback: screen-record the full flow once, in case live Wi-Fi/airplane-mode toggling misbehaves during judging</li>
+</ul>
+<hr>
+<h2>Quick reference: time budget</h2>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Est. time</th>
+<th>Skippable under time pressure?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0–1 Setup/scaffolding</td>
+<td>2–3 hrs</td>
+<td>No</td>
+</tr>
+<tr>
+<td>2 Auth</td>
+<td>2–3 hrs</td>
+<td>No</td>
+</tr>
+<tr>
+<td>3 Course library</td>
+<td>2 hrs</td>
+<td>No</td>
+</tr>
+<tr>
+<td>4 Download manager</td>
+<td>4–6 hrs</td>
+<td>No — this is the core</td>
+</tr>
+<tr>
+<td>5 Lesson viewer</td>
+<td>2–3 hrs</td>
+<td>No</td>
+</tr>
+<tr>
+<td>6 Offline quiz</td>
+<td>3–4 hrs</td>
+<td>No</td>
+</tr>
+<tr>
+<td>7 Sync engine</td>
+<td>3–4 hrs</td>
+<td>No</td>
+</tr>
+<tr>
+<td>8 Storage lifecycle</td>
+<td>4–5 hrs</td>
+<td>No — this is your differentiator</td>
+</tr>
+<tr>
+<td>9 AI assistant</td>
+<td>3–4 hrs</td>
+<td>Partially — offline path can be very simple keyword matching</td>
+</tr>
+<tr>
+<td>10 Scholarships/career</td>
+<td>2–3 hrs</td>
+<td>Yes — simplify freely per Phase 10 notes</td>
+</tr>
+<tr>
+<td>11 Error polish</td>
+<td>2–3 hrs</td>
+<td>Yes — cover top 5 rows of the matrix only if short on time</td>
+</tr>
+<tr>
+<td>12 Demo prep</td>
+<td>1–2 hrs</td>
+<td>No</td>
+</tr>
+</tbody>
+</table>
+<p><strong>~32–42 hours total</strong> — realistic for a 2–3 day hackathon with a 3–4 person team splitting mobile/backend/AI work in parallel from Phase 2 onward (Phases 0–1 must be sequential/shared first).</p>
+<hr>
+<p>Ready when you are to start actually writing code for any phase — tell me which one and I'll build it out with you.</p>
+
+</body></html>
