@@ -1,243 +1,256 @@
 import React from 'react';
 import {
-  Pressable,
-  StyleSheet,
-  Text,
   View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 
 type DashboardProps = {
+  userName?: string;
   onMyCourses: () => void;
+  onTakeQuiz: () => void;
+  onAskAI: () => void;
+  onScholarships: () => void;
+  onContinueLearning: () => void;
+  onProfile: () => void;
   onBack: () => void;
 };
 
 export default function Dashboard({
+  userName,
   onMyCourses,
+  onTakeQuiz,
+  onAskAI,
+  onScholarships,
+  onContinueLearning,
+  onProfile,
   onBack,
 }: DashboardProps) {
+  const greetingName =
+    userName && userName.trim().length > 0
+      ? userName
+      : null;
+
   return (
     <View style={styles.container}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+      >
 
-      {/* Header */}
-      <View style={styles.header}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>
+              {greetingName
+                ? `Hello, ${greetingName} 👋`
+                : 'Hello 👋'}
+            </Text>
 
-        <Pressable
-          style={styles.profileCircle}
-          onPress={onBack}
-        >
-          <Text style={styles.profileEmoji}>
-            👤
-          </Text>
-        </Pressable>
+            <Text style={styles.subtitle}>
+              Continue your learning journey
+            </Text>
+          </View>
 
-        <View style={styles.headerText}>
-          <Text style={styles.greeting}>
-            Hello 👋
-          </Text>
-
-          <Text style={styles.subtitle}>
-            Keep learning, keep growing.
-          </Text>
+          <TouchableOpacity
+            style={styles.profileButton}
+            onPress={onProfile}
+          >
+            <Text style={styles.profileIcon}>
+              👤
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.notification}>
-          <Text style={styles.notificationIcon}>
-            🔔
-          </Text>
+        {/* Offline Status */}
+        <View style={styles.offlineBanner}>
+          <View style={styles.statusDot} />
 
-          <View style={styles.notificationDot} />
+          <View style={styles.offlineContent}>
+            <Text style={styles.offlineTitle}>
+              Offline Mode
+            </Text>
+
+            <Text style={styles.offlineText}>
+              Your learning continues without internet.
+            </Text>
+          </View>
         </View>
 
-      </View>
-
-      {/* Search */}
-      <View style={styles.searchBox}>
-        <Text style={styles.searchIcon}>
-          ⌕
-        </Text>
-
-        <Text style={styles.searchText}>
-          Search courses, topics...
-        </Text>
-      </View>
-
-      {/* Feature Grid */}
-      <View style={styles.grid}>
-
-        <Pressable
-          style={[styles.card, styles.green]}
-          onPress={onMyCourses}
-        >
-          <View style={styles.iconBox}>
-            <Text style={styles.icon}>
-              📖
-            </Text>
-          </View>
-
-          <Text style={styles.cardTitle}>
-            My Courses
-          </Text>
-
-          <Text style={styles.cardSubtitle}>
-            Download & learn offline
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.card, styles.blue]}
-        >
-          <View style={styles.iconBox}>
-            <Text style={styles.icon}>
-              🤖
-            </Text>
-          </View>
-
-          <Text style={styles.cardTitle}>
-            AI Doubt Assistant
-          </Text>
-
-          <Text style={styles.cardSubtitle}>
-            Ask in Hindi or English
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.card, styles.yellow]}
-        >
-          <View style={styles.iconBox}>
-            <Text style={styles.icon}>
-              🎓
-            </Text>
-          </View>
-
-          <Text style={styles.cardTitle}>
-            Scholarships
-          </Text>
-
-          <Text style={styles.cardSubtitle}>
-            Find opportunities
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.card, styles.purple]}
-        >
-          <View style={styles.iconBox}>
-            <Text style={styles.icon}>
-              📊
-            </Text>
-          </View>
-
-          <Text style={styles.cardTitle}>
-            Career Guidance
-          </Text>
-
-          <Text style={styles.cardSubtitle}>
-            Plan your future
-          </Text>
-        </Pressable>
-
-      </View>
-
-      {/* Continue Learning */}
-      <View style={styles.sectionHeader}>
+        {/* Continue Learning */}
         <Text style={styles.sectionTitle}>
           Continue Learning
         </Text>
 
-        <Pressable onPress={onMyCourses}>
-          <Text style={styles.seeAll}>
-            See all
-          </Text>
-        </Pressable>
-      </View>
+        <TouchableOpacity
+          style={styles.continueCard}
+          onPress={onContinueLearning}
+          activeOpacity={0.85}
+        >
+          <View style={styles.courseIcon}>
+            <Text style={styles.courseIconText}>
+              📚
+            </Text>
+          </View>
 
-      <Pressable
-        style={styles.learningCard}
-        onPress={onMyCourses}
-      >
+          <View style={styles.courseInfo}>
+            <Text style={styles.courseName}>
+              Data Structures & Algorithms
+            </Text>
 
-        <View style={styles.learningIcon}>
-          <Text style={styles.learningEmoji}>
-            🎁
+            <Text style={styles.lessonText}>
+              Continue where you left off
+            </Text>
+
+            <View style={styles.progressBackground}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: '20%' },
+                ]}
+              />
+            </View>
+
+            <Text style={styles.progressText}>
+              20% completed
+            </Text>
+          </View>
+
+          <Text style={styles.arrow}>
+            ›
           </Text>
+        </TouchableOpacity>
+
+        {/* My Courses */}
+        <Text style={styles.sectionTitle}>
+          My Learning
+        </Text>
+
+        <TouchableOpacity
+          style={styles.myCoursesCard}
+          onPress={onMyCourses}
+          activeOpacity={0.85}
+        >
+          <View style={styles.myCoursesIcon}>
+            <Text style={styles.myCoursesIconText}>
+              📖
+            </Text>
+          </View>
+
+          <View style={styles.cardText}>
+            <Text style={styles.cardTitle}>
+              My Courses
+            </Text>
+
+            <Text style={styles.cardSubtitle}>
+              Browse courses and learning packs
+            </Text>
+          </View>
+
+          <Text style={styles.arrow}>
+            ›
+          </Text>
+        </TouchableOpacity>
+
+        {/* Quick Actions */}
+        <Text style={styles.sectionTitle}>
+          Quick Actions
+        </Text>
+
+        <View style={styles.quickActions}>
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={onTakeQuiz}
+            activeOpacity={0.85}
+          >
+            <View style={styles.actionIcon}>
+              <Text>📝</Text>
+            </View>
+
+            <Text style={styles.actionTitle}>
+              Take Quiz
+            </Text>
+
+            <Text style={styles.actionSubtitle}>
+              Practice offline
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={onAskAI}
+            activeOpacity={0.85}
+          >
+            <View style={styles.actionIcon}>
+              <Text>🤖</Text>
+            </View>
+
+            <Text style={styles.actionTitle}>
+              Ask AI
+            </Text>
+
+            <Text style={styles.actionSubtitle}>
+              Clear your doubts
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.learningContent}>
-          <Text style={styles.learningTitle}>
-            Starter Bundle
+        {/* Scholarships */}
+        <TouchableOpacity
+          style={styles.scholarshipCard}
+          onPress={onScholarships}
+          activeOpacity={0.85}
+        >
+          <View style={styles.scholarshipIcon}>
+            <Text>🎓</Text>
+          </View>
+
+          <View style={styles.cardText}>
+            <Text style={styles.cardTitle}>
+              Scholarships
+            </Text>
+
+            <Text style={styles.cardSubtitle}>
+              Discover opportunities matching your profile
+            </Text>
+          </View>
+
+          <Text style={styles.arrow}>
+            ›
+          </Text>
+        </TouchableOpacity>
+
+        {/* Offline Learning */}
+        <View style={styles.bottomCard}>
+          <Text style={styles.bottomIcon}>
+            🌱
           </Text>
 
-          <Text style={styles.learningSubtitle}>
-            Explore sample courses and lessons
-          </Text>
+          <View style={styles.bottomText}>
+            <Text style={styles.bottomTitle}>
+              Learning continues
+            </Text>
 
-          <View style={styles.progressBackground}>
-            <View style={styles.progressFill} />
+            <Text style={styles.bottomSubtitle}>
+              Your progress is saved on this device
+              and can sync when you're back online.
+            </Text>
           </View>
         </View>
 
-        <View style={styles.playButton}>
-          <Text style={styles.playText}>
-            ▶
-          </Text>
-        </View>
-
-      </Pressable>
-
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-
-        <View style={styles.navItem}>
-          <Text style={styles.activeIcon}>
-            ⌂
-          </Text>
-          <Text style={styles.activeText}>
-            Home
-          </Text>
-        </View>
-
-        <Pressable
-          style={styles.navItem}
-          onPress={onMyCourses}
+        {/* Back */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onBack}
         >
-          <Text style={styles.navIcon}>
-            ▣
+          <Text style={styles.backButtonText}>
+            Back to Entry
           </Text>
-          <Text style={styles.navText}>
-            Courses
-          </Text>
-        </Pressable>
+        </TouchableOpacity>
 
-        <View style={styles.navItem}>
-          <Text style={styles.navIcon}>
-            ◉
-          </Text>
-          <Text style={styles.navText}>
-            AI
-          </Text>
-        </View>
-
-        <View style={styles.navItem}>
-          <Text style={styles.navIcon}>
-            🎓
-          </Text>
-          <Text style={styles.navText}>
-            Scholarships
-          </Text>
-        </View>
-
-        <View style={styles.navItem}>
-          <Text style={styles.navIcon}>
-            ◯
-          </Text>
-          <Text style={styles.navText}>
-            Profile
-          </Text>
-        </View>
-
-      </View>
-
+      </ScrollView>
     </View>
   );
 }
@@ -245,278 +258,291 @@ export default function Dashboard({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F6F0',
-    paddingHorizontal: 18,
-    paddingTop: 42,
+    backgroundColor: '#FFFDF8',
+  },
+
+  content: {
+    padding: 20,
+    paddingBottom: 40,
   },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-
-  profileCircle: {
-    width: 47,
-    height: 47,
-    borderRadius: 24,
-    backgroundColor: '#E4EFE3',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  profileEmoji: {
-    fontSize: 23,
-  },
-
-  headerText: {
-    flex: 1,
-    marginLeft: 11,
+    justifyContent: 'space-between',
+    marginBottom: 22,
   },
 
   greeting: {
-    fontSize: 20,
+    fontSize: 25,
     fontWeight: '700',
-    color: '#173C31',
+    color: '#20352A',
+    marginBottom: 5,
   },
 
   subtitle: {
-    marginTop: 3,
-    fontSize: 10,
-    color: '#7A837D',
+    fontSize: 13,
+    color: '#7A847D',
   },
 
-  notification: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#FFFFFF',
+  profileButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#E8F0E4',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  notificationIcon: {
-    fontSize: 18,
+  profileIcon: {
+    fontSize: 21,
   },
 
-  notificationDot: {
-    position: 'absolute',
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#D94C4C',
-    top: 7,
-    right: 8,
-  },
-
-  searchBox: {
-    height: 43,
-    marginTop: 15,
-    borderRadius: 13,
-    backgroundColor: '#FFFFFF',
+  offlineBanner: {
+    backgroundColor: '#F1F6ED',
+    borderRadius: 17,
+    padding: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 27,
     borderWidth: 1,
-    borderColor: '#E2E6E1',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 13,
+    borderColor: '#E1EADB',
   },
 
-  searchIcon: {
-    fontSize: 22,
-    color: '#738078',
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#5D9568',
+    marginRight: 12,
   },
 
-  searchText: {
-    marginLeft: 8,
-    fontSize: 11,
-    color: '#9AA19C',
+  offlineContent: {
+    flex: 1,
   },
 
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginTop: 14,
-  },
-
-  card: {
-    width: '48.5%',
-    minHeight: 105,
-    borderRadius: 15,
-    padding: 11,
-    marginBottom: 9,
-  },
-
-  green: {
-    backgroundColor: '#DDF1E3',
-  },
-
-  blue: {
-    backgroundColor: '#E2EEFC',
-  },
-
-  yellow: {
-    backgroundColor: '#FFF0D0',
-  },
-
-  purple: {
-    backgroundColor: '#EEE5FC',
-  },
-
-  iconBox: {
-    width: 35,
-    height: 35,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.65)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  icon: {
-    fontSize: 19,
-  },
-
-  cardTitle: {
-    marginTop: 7,
-    fontSize: 12,
+  offlineTitle: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#26382C',
+    color: '#315C43',
+    marginBottom: 3,
   },
 
-  cardSubtitle: {
-    marginTop: 2,
-    fontSize: 8.5,
-    color: '#6E7972',
-  },
-
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 7,
-    marginBottom: 8,
+  offlineText: {
+    fontSize: 11,
+    color: '#728078',
   },
 
   sectionTitle: {
     fontSize: 17,
     fontWeight: '700',
-    color: '#243A2C',
+    color: '#20352A',
+    marginBottom: 12,
+    marginTop: 3,
   },
 
-  seeAll: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#4C8059',
-  },
-
-  learningCard: {
+  continueCard: {
+    backgroundColor: '#F3F7EF',
+    borderRadius: 20,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: '#E1E5E0',
-    padding: 11,
+    marginBottom: 27,
   },
 
-  learningIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: '#E5F1E4',
+  courseIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: '#DCE9D8',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  learningEmoji: {
-    fontSize: 25,
+  courseIconText: {
+    fontSize: 23,
   },
 
-  learningContent: {
+  courseInfo: {
     flex: 1,
-    marginLeft: 10,
+    marginLeft: 13,
   },
 
-  learningTitle: {
-    fontSize: 12,
+  courseName: {
+    fontSize: 14,
     fontWeight: '700',
-    color: '#26382C',
+    color: '#263A2E',
+    marginBottom: 4,
   },
 
-  learningSubtitle: {
-    marginTop: 3,
-    fontSize: 9,
-    color: '#7B857E',
+  lessonText: {
+    fontSize: 11,
+    color: '#7A847D',
+    marginBottom: 9,
   },
 
   progressBackground: {
-    height: 5,
-    marginTop: 7,
+    height: 6,
     borderRadius: 3,
-    backgroundColor: '#E5EAE5',
+    backgroundColor: '#D9E2D5',
+    overflow: 'hidden',
   },
 
   progressFill: {
-    width: '0%',
-    height: 5,
+    height: '100%',
     borderRadius: 3,
-    backgroundColor: '#4D9562',
+    backgroundColor: '#5C8865',
   },
 
-  playButton: {
-    width: 35,
-    height: 35,
-    borderRadius: 18,
-    backgroundColor: '#4D9562',
-    alignItems: 'center',
-    justifyContent: 'center',
+  progressText: {
+    fontSize: 10,
+    color: '#6E7A71',
+    marginTop: 5,
+  },
+
+  arrow: {
+    fontSize: 26,
+    color: '#9AA39C',
     marginLeft: 8,
   },
 
-  playText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-  },
-
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 68,
+  myCoursesCard: {
     backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E4E7E3',
+    borderRadius: 18,
+    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
+    borderWidth: 1,
+    borderColor: '#E7ECE3',
+    marginBottom: 27,
   },
 
-  navItem: {
+  myCoursesIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: '#EEF4EA',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 65,
   },
 
-  navIcon: {
-    fontSize: 18,
-    color: '#7D8780',
+  myCoursesIconText: {
+    fontSize: 22,
   },
 
-  activeIcon: {
-    fontSize: 20,
-    color: '#3F8A59',
+  cardText: {
+    flex: 1,
+    marginLeft: 13,
   },
 
-  activeText: {
-    marginTop: 3,
-    fontSize: 8,
+  cardTitle: {
+    fontSize: 14,
     fontWeight: '700',
-    color: '#3F8A59',
+    color: '#293B30',
+    marginBottom: 4,
   },
 
-  navText: {
-    marginTop: 3,
-    fontSize: 8,
-    color: '#7D8780',
+  cardSubtitle: {
+    fontSize: 11,
+    lineHeight: 17,
+    color: '#7A847D',
+  },
+
+  quickActions: {
+    flexDirection: 'row',
+    gap: 11,
+    marginBottom: 12,
+  },
+
+  actionCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#E7ECE3',
+  },
+
+  actionIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    backgroundColor: '#EEF4EA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 11,
+  },
+
+  actionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#293B30',
+    marginBottom: 4,
+  },
+
+  actionSubtitle: {
+    fontSize: 10,
+    color: '#7A847D',
+  },
+
+  scholarshipCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E7ECE3',
+    marginBottom: 24,
+  },
+
+  scholarshipIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: '#F2F0E5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  bottomCard: {
+    backgroundColor: '#F5F7F2',
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+
+  bottomIcon: {
+    fontSize: 24,
+  },
+
+  bottomText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  bottomTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#315C43',
+    marginBottom: 4,
+  },
+
+  bottomSubtitle: {
+    fontSize: 10,
+    lineHeight: 16,
+    color: '#7A847D',
+  },
+
+  backButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+
+  backButtonText: {
+    fontSize: 12,
+    color: '#718078',
   },
 });
