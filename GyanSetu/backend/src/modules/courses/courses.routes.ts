@@ -9,9 +9,6 @@ export const starterRouter = Router();
 
 const CourseId = z.string().regex(/^[a-z0-9-]+$/);
 
-// pg returns bigint columns as strings; pack sizes fit safely in a JS number.
-const toNum = (v: string | number | null | undefined) => (v == null ? null : Number(v));
-
 // Escape LIKE wildcards so a search for "100%" matches literally.
 const escapeLike = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
@@ -49,8 +46,8 @@ coursesRouter.get('/', async (req, res) => {
       icon: c.icon,
       lessonCount: c.lesson_count,
       packVersion: c.pack_version,
-      fullSizeBytes: toNum(c.full_size_bytes),
-      liteSizeBytes: toNum(c.lite_size_bytes),
+      fullSizeBytes: c.full_size_bytes,
+      liteSizeBytes: c.lite_size_bytes,
       updatedAt: c.updated_at,
     })),
   });
@@ -113,7 +110,7 @@ coursesRouter.get('/:id', async (req, res) => {
       packId: p.id,
       variant: p.variant,
       version: p.version,
-      sizeBytes: toNum(p.size_bytes),
+      sizeBytes: p.size_bytes,
       releaseNotes: p.release_notes,
       publishedAt: p.published_at,
     })),
@@ -140,7 +137,7 @@ coursesRouter.get('/:id/pack', optionalAuth, async (req, res) => {
     courseId: id,
     version: pack.version,
     variant: pack.variant,
-    sizeBytes: toNum(pack.size_bytes),
+    sizeBytes: pack.size_bytes,
     releaseNotes: pack.release_notes,
     manifestUrl: `/v1/packs/${pack.id}/manifest`,
   });
@@ -158,7 +155,6 @@ starterRouter.get('/', async (_req, res) => {
             count(l.id)::int AS sample_lessons,
             EXISTS (SELECT 1 FROM quizzes q WHERE q.course_id = c.id AND q.is_sample) AS has_quiz
        FROM courses c JOIN lessons l ON l.course_id = c.id AND l.is_sample
-      WHERE c.is_published
       GROUP BY c.id ORDER BY c.sort_order`,
   );
   res.json({
@@ -166,7 +162,7 @@ starterRouter.get('/', async (_req, res) => {
       ? {
           packId: pack.id,
           version: pack.version,
-          sizeBytes: toNum(pack.size_bytes),
+          sizeBytes: pack.size_bytes,
           manifestUrl: `/v1/packs/${pack.id}/manifest`,
         }
       : null,

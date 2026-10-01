@@ -6,17 +6,17 @@ import { env } from './config/env';
 import { logger } from './lib/logger';
 import { pool } from './db/pool';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
-// Module routers — uncomment each as its phase is built:
+// Module routers
 import { authRouter } from './modules/auth/auth.routes';
 import { usersRouter } from './modules/users/users.routes';
 import { coursesRouter, starterRouter } from './modules/courses/courses.routes';
-// import { packsRouter } from './modules/packs/packs.routes';
-// import { syncRouter } from './modules/sync/sync.routes';
-// import { progressRouter } from './modules/progress/progress.routes';
-// import { aiRouter } from './modules/ai/ai.routes';
-// import { scholarshipsRouter } from './modules/scholarships/scholarships.routes';
-// import { careerRouter } from './modules/career/career.routes';
-// import { adminRouter } from './modules/admin/admin.routes';
+import { packsRouter } from './modules/packs/packs.routes';
+import { syncRouter } from './modules/sync/sync.routes';
+import { progressRouter } from './modules/progress/progress.routes';
+import { aiRouter } from './modules/ai/ai.routes';
+import { scholarshipsRouter } from './modules/scholarships/scholarships.routes';
+import { careerRouter } from './modules/career/career.routes';
+import { adminRouter } from './modules/admin/admin.routes';
 
 export function createApp() {
   const app = express();
@@ -24,7 +24,11 @@ export function createApp() {
   app.set('trust proxy', 1); // correct client IPs behind Railway/Render/NGINX
   app.disable('x-powered-by');
   app.use(helmet());
-  app.use(cors({ origin: env.CORS_ORIGINS === '*' ? true : env.CORS_ORIGINS.split(',') }));
+  // The mobile app isn't a browser and ignores CORS; this only governs web clients
+  // (e.g. a future admin panel). '*' is a dev convenience, never used in production.
+  const corsOrigin =
+    env.CORS_ORIGINS === '*' ? env.NODE_ENV !== 'production' : env.CORS_ORIGINS.split(',').map((o) => o.trim());
+  app.use(cors({ origin: corsOrigin }));
   app.use(express.json({ limit: '1mb' }));
   if (env.NODE_ENV !== 'test') app.use(pinoHttp({ logger }));
 
@@ -43,13 +47,13 @@ export function createApp() {
   app.use('/v1/me', usersRouter);
   app.use('/v1/courses', coursesRouter);
   app.use('/v1/starter-bundle', starterRouter);
-  // app.use('/v1/packs', packsRouter);
-  // app.use('/v1/sync', syncRouter);
-  // app.use('/v1/progress', progressRouter);
-  // app.use('/v1/ai', aiRouter);
-  // app.use('/v1/scholarships', scholarshipsRouter);
-  // app.use('/v1/career', careerRouter);
-  // app.use('/v1/admin', adminRouter);
+  app.use('/v1/packs', packsRouter);
+  app.use('/v1/sync', syncRouter);
+  app.use('/v1/progress', progressRouter);
+  app.use('/v1/ai', aiRouter);
+  app.use('/v1/scholarships', scholarshipsRouter);
+  app.use('/v1/career', careerRouter);
+  app.use('/v1/admin', adminRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

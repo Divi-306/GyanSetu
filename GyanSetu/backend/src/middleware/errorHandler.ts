@@ -26,9 +26,17 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     res.status(409).json({ error: { code: 'ALREADY_EXISTS', message: 'Resource already exists' } });
     return;
   }
+  if (err?.code === '23503') {
+    res.status(400).json({ error: { code: 'UNKNOWN_REFERENCE', message: 'A referenced record does not exist' } });
+    return;
+  }
   // Errors from express internals (e.g. res.sendFile ENOENT) carry a status.
   if (typeof err?.status === 'number' && err.status < 500) {
-    res.status(err.status).json({ error: { code: err.status === 404 ? 'NOT_FOUND' : 'BAD_REQUEST', message: err.message } });
+    // Don't echo err.message: for sendFile it contains the server's filesystem path.
+    const notFound = err.status === 404;
+    res.status(err.status).json({
+      error: { code: notFound ? 'NOT_FOUND' : 'BAD_REQUEST', message: notFound ? 'File not found' : 'Bad request' },
+    });
     return;
   }
 

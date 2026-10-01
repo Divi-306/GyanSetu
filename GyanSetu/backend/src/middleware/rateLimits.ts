@@ -24,4 +24,5 @@ export const syncLimiter = rateLimit({
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.id ?? 'anonymous',
+  message: { error: { code: 'RATE_LIMITED', message: 'Syncing too often. Try again in a minute.' } },
 });
