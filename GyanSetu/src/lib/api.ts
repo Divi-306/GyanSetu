@@ -1,6 +1,21 @@
+import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
-export const API_URL = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
+/**
+ * Where the API lives.
+ * - A full URL (release builds, or to pin one in development) is used as is.
+ * - "auto" (or empty) in development follows the PC's current LAN IP, taken from
+ *   the Expo dev server the app was loaded from, so a new Wi-Fi IP never breaks it.
+ */
+function resolveApiUrl(): string {
+  const configured = (process.env.EXPO_PUBLIC_API_URL ?? '').trim().replace(/\/+$/, '');
+  if (configured && configured !== 'auto') return configured;
+  const devHost = Constants.expoConfig?.hostUri?.split(':')[0]; // e.g. "192.168.1.13:8081" → "192.168.1.13"
+  const port = process.env.EXPO_PUBLIC_API_PORT ?? '4000';
+  return __DEV__ && devHost ? `http://${devHost}:${port}` : '';
+}
+
+export const API_URL = resolveApiUrl();
 
 const ACCESS = 'gs_access';
 const REFRESH = 'gs_refresh';

@@ -20,10 +20,14 @@ packsRouter.get('/:packId/manifest', optionalAuth, async (req, res) => {
   if (!pack) throw notFound('Learning pack');
   if (pack.kind === 'course' && !req.user) throw unauthorized('Log in to download full courses');
 
+  // In development, build links from the address the phone actually used, so a
+  // changed Wi-Fi IP never breaks downloads. Production always uses PUBLIC_BASE_URL.
+  const baseUrl = env.NODE_ENV === 'development' ? `${req.protocol}://${req.get('host')}` : env.PUBLIC_BASE_URL;
+
   res.json({
     ...pack.manifest,
     urlsExpireInSeconds: PACK_URL_TTL_SECONDS,
-    files: pack.manifest.files.map((f) => ({ ...f, url: signPackFileUrl(pack.id, f.path) })),
+    files: pack.manifest.files.map((f) => ({ ...f, url: signPackFileUrl(pack.id, f.path, PACK_URL_TTL_SECONDS, baseUrl) })),
   });
 });
 

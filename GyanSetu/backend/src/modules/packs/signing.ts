@@ -7,11 +7,16 @@ function hmac(data: string) {
   return crypto.createHmac('sha256', env.PACK_URL_SECRET).update(data).digest('base64url');
 }
 
-export function signPackFileUrl(packId: string, filePath: string, ttlSeconds = PACK_URL_TTL_SECONDS): string {
+export function signPackFileUrl(
+  packId: string,
+  filePath: string,
+  ttlSeconds = PACK_URL_TTL_SECONDS,
+  baseUrl = env.PUBLIC_BASE_URL,
+): string {
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
   const sig = hmac(`${packId}:${filePath}:${exp}`);
   const encodedPath = filePath.split('/').map(encodeURIComponent).join('/');
-  return `${env.PUBLIC_BASE_URL}/v1/packs/${packId}/files/${encodedPath}?exp=${exp}&sig=${sig}`;
+  return `${baseUrl}/v1/packs/${packId}/files/${encodedPath}?exp=${exp}&sig=${sig}`;
 }
 
 export function verifyPackFileSig(packId: string, filePath: string, exp: number, sig: string): boolean {
