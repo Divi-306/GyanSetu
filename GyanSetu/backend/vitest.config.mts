@@ -13,7 +13,8 @@ export default defineConfig({
       PACK_URL_SECRET: 'test-pack-secret-test-pack-secret-1234',
       // Separate from dev, so seeding the test DB never overwrites dev packs.
       PACK_STORAGE_DIR: './storage-test/packs',
-      AI_PROVIDER: 'xai',
+      AI_PROVIDER: 'groq',
+      GROQ_API_KEY: '',
       XAI_API_KEY: '',
       ANTHROPIC_API_KEY: '',
       AI_MODEL: '',

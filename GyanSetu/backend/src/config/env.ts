@@ -22,7 +22,8 @@ const EnvSchema = z.object({
   MEDIA_SOURCE_DIR: z.string().default('./storage/media'),
 
   // AI tutor provider. Each has its own key; AI_MODEL overrides the provider's default model.
-  AI_PROVIDER: z.enum(['xai', 'anthropic']).default('xai'),
+  AI_PROVIDER: z.enum(['groq', 'xai', 'anthropic']).default('groq'),
+  GROQ_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
   AI_MODEL: z

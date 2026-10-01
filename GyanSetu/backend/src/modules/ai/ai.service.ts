@@ -8,7 +8,7 @@ import { retrieveChunks } from './retrieval';
 const SYSTEM_PROMPT = `You are GyanSetu's doubt-solving tutor for Indian students learning computer science (school, diploma and undergraduate level). Many of them study in a second language on low-end phones.
 
 How to answer:
-- Reply in the language the student used: Hindi (Devanagari), English, or Hinglish if they wrote in Hinglish.
+- Write the answer in the language given in <reply_language>. The course excerpts may be in a different language; that does not change the reply language.
 - Use the course excerpts inside <sources> when they are relevant, and list the ids of the excerpts you actually relied on in usedSourceIds.
 - If the excerpts do not cover the question, you may answer from general knowledge, but set groundedInCourseMaterial to false and usedSourceIds to [].
 - If you are not sure, say so plainly and set confidence to "low". Never invent facts, formulas, syntax or references.
@@ -36,6 +36,15 @@ const ANSWER_JSON_SCHEMA = {
 
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+/**
+ * Which language to answer in, decided from the question's script rather than
+ * left to the model: fast models tended to answer English questions in Hindi.
+ */
+export function replyLanguage(question: string): string {
+  if (/\p{Script=Devanagari}/u.test(question)) return 'Hindi (Devanagari script)';
+  return 'English. If the question itself is Hinglish (Hindi words written in Latin letters), reply in Hinglish';
+}
+
 export type AskInput = { userId: string; question: string; courseId?: string };
 
 export async function askTutor({ userId, question, courseId }: AskInput) {
@@ -45,7 +54,10 @@ export async function askTutor({ userId, question, courseId }: AskInput) {
   const sourcesXml = chunks
     .map((c) => `<source id="${c.id}" label="${escapeAttr(c.source_label)}">\n${c.text}\n</source>`)
     .join('\n');
-  const userContent = `<sources>\n${sourcesXml || '(no matching course material found)'}\n</sources>\n\n<question>\n${question}\n</question>`;
+  const userContent =
+    `<sources>\n${sourcesXml || '(no matching course material found)'}\n</sources>\n\n` +
+    `<question>\n${question}\n</question>\n\n` +
+    `<reply_language>${replyLanguage(question)}</reply_language>`;
 
   const result = await complete({ system: SYSTEM_PROMPT, user: userContent, schema: ANSWER_JSON_SCHEMA });
 
@@ -74,7 +86,7 @@ export async function askTutor({ userId, question, courseId }: AskInput) {
     .map((c) => ({ id: c.id, label: c.source_label, courseId: c.course_id, lessonId: c.lesson_id }));
 
   const answer = {
-    answer: parsed.data.answer,
+    answer: unescapeNewlines(parsed.data.answer),
     confidence: parsed.data.confidence,
     groundedInCourseMaterial: parsed.data.groundedInCourseMaterial && sources.length > 0,
     sources,
@@ -94,6 +106,15 @@ export async function askTutor({ userId, question, courseId }: AskInput) {
     .catch((err) => logger.error({ err }, 'Failed to log AI question'));
 
   return answer;
+}
+
+/**
+ * Some models double-escape line breaks inside the JSON string, so the student
+ * would see a literal "\n". Only fix answers with no real line breaks at all,
+ * so a code example like print("a\nb") in a normal answer is left alone.
+ */
+export function unescapeNewlines(answer: string): string {
+  return answer.includes('\n') ? answer : answer.replace(/\\n/g, '\n');
 }
 
 function safeJson(s: string): unknown {

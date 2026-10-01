@@ -17,23 +17,49 @@ export type CompletionResult =
 const busy = () => new HttpError(503, 'AI_BUSY', 'The AI tutor is busy. Try again in a minute.');
 const unavailable = () => new HttpError(502, 'AI_UNAVAILABLE', 'The AI tutor is unavailable right now');
 
-// ─────────────────────────── xAI (Grok) ───────────────────────────
-// OpenAI-compatible chat completions with a strict JSON schema.
-// Docs: https://docs.x.ai/developers/model-capabilities/text/structured-outputs
+// ─────────────────── OpenAI-compatible providers (Groq, xAI) ───────────────────
+// Chat completions with a strict JSON schema (response_format.json_schema).
 
-const XAI_URL = 'https://api.x.ai/v1/chat/completions';
-const XAI_DEFAULT_MODEL = 'grok-4.7';
+type OpenAiCompatible = {
+  name: string;
+  url: string;
+  apiKey: () => string | undefined;
+  defaultModel: string;
+  /** Provider-specific request fields. */
+  extra: Record<string, unknown>;
+};
 
-async function completeWithXai(req: CompletionRequest): Promise<CompletionResult> {
-  const model = env.AI_MODEL ?? XAI_DEFAULT_MODEL;
+const GROQ: OpenAiCompatible = {
+  // Docs: https://console.groq.com/docs/structured-outputs and /docs/reasoning
+  name: 'Groq',
+  url: 'https://api.groq.com/openai/v1/chat/completions',
+  apiKey: () => env.GROQ_API_KEY,
+  // Production model with strict json_schema support; fast and inexpensive.
+  defaultModel: 'openai/gpt-oss-120b',
+  // gpt-oss is a reasoning model: little reasoning suits short tutoring answers,
+  // and the reasoning text itself isn't needed in the response.
+  extra: { max_completion_tokens: 4000, reasoning_effort: 'low', include_reasoning: false },
+};
+
+const XAI: OpenAiCompatible = {
+  // Docs: https://docs.x.ai/developers/model-capabilities/text/structured-outputs
+  name: 'xAI',
+  url: 'https://api.x.ai/v1/chat/completions',
+  apiKey: () => env.XAI_API_KEY,
+  defaultModel: 'grok-4.7',
+  extra: { max_tokens: 4000 },
+};
+
+async function completeOpenAiCompatible(p: OpenAiCompatible, req: CompletionRequest): Promise<CompletionResult> {
+  const model = env.AI_MODEL ?? p.defaultModel;
   let res: Response;
   try {
-    res = await fetch(XAI_URL, {
+    res = await fetch(p.url, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${env.XAI_API_KEY}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${p.apiKey()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        max_tokens: 4000,
+        ...p.extra,
         messages: [
           { role: 'system', content: req.system },
           { role: 'user', content: req.user },
@@ -46,14 +72,17 @@ async function completeWithXai(req: CompletionRequest): Promise<CompletionResult
       signal: AbortSignal.timeout(60_000),
     });
   } catch (err) {
-    logger.error({ err }, 'xAI request failed');
+    logger.error({ err, provider: p.name }, 'AI request failed');
     throw unavailable();
   }
 
   if (res.status === 429) throw busy();
   if (!res.ok) {
     // Log the provider's error for us; never pass it through to students.
-    logger.error({ status: res.status, body: (await res.text().catch(() => '')).slice(0, 500) }, 'xAI API error');
+    logger.error(
+      { provider: p.name, status: res.status, body: (await res.text().catch(() => '')).slice(0, 500) },
+      'AI API error',
+    );
     throw unavailable();
   }
 
@@ -66,7 +95,7 @@ async function completeWithXai(req: CompletionRequest): Promise<CompletionResult
   if (choice?.message?.refusal) return { kind: 'refused', model: data.model ?? model };
   // A cut-off reply can't be valid JSON; treat it as unavailable rather than half an answer.
   if (!choice?.message?.content || choice.finish_reason === 'length') {
-    logger.error({ finishReason: choice?.finish_reason }, 'Unusable xAI response');
+    logger.error({ provider: p.name, finishReason: choice?.finish_reason }, 'Unusable AI response');
     throw unavailable();
   }
   return {
@@ -126,9 +155,17 @@ async function completeWithAnthropic(req: CompletionRequest): Promise<Completion
 
 /** True when the configured provider has its API key. */
 export function aiConfigured(): boolean {
-  return env.AI_PROVIDER === 'xai' ? Boolean(env.XAI_API_KEY) : Boolean(env.ANTHROPIC_API_KEY);
+  switch (env.AI_PROVIDER) {
+    case 'groq': return Boolean(env.GROQ_API_KEY);
+    case 'xai': return Boolean(env.XAI_API_KEY);
+    case 'anthropic': return Boolean(env.ANTHROPIC_API_KEY);
+  }
 }
 
 export function complete(req: CompletionRequest): Promise<CompletionResult> {
-  return env.AI_PROVIDER === 'xai' ? completeWithXai(req) : completeWithAnthropic(req);
+  switch (env.AI_PROVIDER) {
+    case 'groq': return completeOpenAiCompatible(GROQ, req);
+    case 'xai': return completeOpenAiCompatible(XAI, req);
+    case 'anthropic': return completeWithAnthropic(req);
+  }
 }
