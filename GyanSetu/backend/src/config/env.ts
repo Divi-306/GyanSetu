@@ -21,8 +21,14 @@ const EnvSchema = z.object({
   PACK_STORAGE_DIR: z.string().default('./storage/packs'),
   MEDIA_SOURCE_DIR: z.string().default('./storage/media'),
 
+  // AI tutor provider. Each has its own key; AI_MODEL overrides the provider's default model.
+  AI_PROVIDER: z.enum(['xai', 'anthropic']).default('xai'),
+  XAI_API_KEY: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().default('claude-opus-5'),
+  AI_MODEL: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || undefined), // blank means "use the provider's default"
 
   GOOGLE_CLIENT_IDS: z.string().default(''),
 

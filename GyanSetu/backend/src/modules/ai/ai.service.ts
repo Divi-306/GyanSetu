@@ -1,14 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import { env } from '../../config/env';
 import { pool } from '../../db/pool';
 import { HttpError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
+import { aiConfigured, complete } from './providers';
 import { retrieveChunks } from './retrieval';
-
-const anthropic = env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, timeout: 60_000, maxRetries: 2 })
-  : null;
 
 const SYSTEM_PROMPT = `You are GyanSetu's doubt-solving tutor for Indian students learning computer science (school, diploma and undergraduate level). Many of them study in a second language on low-end phones.
 
@@ -37,14 +32,14 @@ const ANSWER_JSON_SCHEMA = {
     groundedInCourseMaterial: { type: 'boolean' },
     usedSourceIds: { type: 'array', items: { type: 'string' } },
   },
-} as const;
+};
 
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 export type AskInput = { userId: string; question: string; courseId?: string };
 
 export async function askTutor({ userId, question, courseId }: AskInput) {
-  if (!anthropic) throw new HttpError(503, 'AI_NOT_CONFIGURED', 'Online AI is not available right now');
+  if (!aiConfigured()) throw new HttpError(503, 'AI_NOT_CONFIGURED', 'Online AI is not available right now');
 
   const chunks = await retrieveChunks(question, courseId);
   const sourcesXml = chunks
@@ -52,33 +47,9 @@ export async function askTutor({ userId, question, courseId }: AskInput) {
     .join('\n');
   const userContent = `<sources>\n${sourcesXml || '(no matching course material found)'}\n</sources>\n\n<question>\n${question}\n</question>`;
 
-  let response;
-  try {
-    response = await anthropic.beta.messages.create({
-      model: env.AI_MODEL,
-      max_tokens: 16000,
-      // If the model declines, the API re-runs the request on a fallback model in the same call.
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      output_config: {
-        effort: 'low',
-        format: { type: 'json_schema', schema: ANSWER_JSON_SCHEMA },
-      },
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userContent }],
-    });
-  } catch (err) {
-    if (err instanceof Anthropic.RateLimitError) {
-      throw new HttpError(503, 'AI_BUSY', 'The AI tutor is busy. Try again in a minute.');
-    }
-    if (err instanceof Anthropic.APIError) {
-      logger.error({ status: err.status, message: err.message }, 'Claude API error');
-      throw new HttpError(502, 'AI_UNAVAILABLE', 'The AI tutor is unavailable right now');
-    }
-    throw err;
-  }
+  const result = await complete({ system: SYSTEM_PROMPT, user: userContent, schema: ANSWER_JSON_SCHEMA });
 
-  if (response.stop_reason === 'refusal') {
+  if (result.kind === 'refused') {
     return {
       answer: "I can't help with that question. Please ask something about your course topics.",
       confidence: 'low' as const,
@@ -88,24 +59,21 @@ export async function askTutor({ userId, question, courseId }: AskInput) {
     };
   }
 
-  // Any reply we can't read (truncated, empty, off-schema) → the app falls back to offline AI.
-  const text = response.content.find((b) => b.type === 'text');
-  const parsed =
-    response.stop_reason === 'end_turn' && text?.type === 'text'
-      ? AnswerSchema.safeParse(safeJson(text.text))
-      : undefined;
-  if (!parsed?.success) {
-    logger.error({ stopReason: response.stop_reason }, 'Unusable AI response');
+  // Any reply we can't read (empty, off-schema) → the app falls back to offline AI.
+  const parsed = AnswerSchema.safeParse(safeJson(result.text));
+  if (!parsed.success) {
+    logger.error({ model: result.model }, 'AI reply did not match the answer schema');
     throw new HttpError(502, 'AI_UNAVAILABLE', 'The AI tutor is unavailable right now');
   }
 
+  // Only cite excerpts we actually sent; a model can't invent a source.
   const byId = new Map(chunks.map((c) => [c.id, c]));
   const sources = parsed.data.usedSourceIds
     .map((id) => byId.get(id))
     .filter((c): c is NonNullable<typeof c> => Boolean(c))
     .map((c) => ({ id: c.id, label: c.source_label, courseId: c.course_id, lessonId: c.lesson_id }));
 
-  const result = {
+  const answer = {
     answer: parsed.data.answer,
     confidence: parsed.data.confidence,
     groundedInCourseMaterial: parsed.data.groundedInCourseMaterial && sources.length > 0,
@@ -119,13 +87,13 @@ export async function askTutor({ userId, question, courseId }: AskInput) {
       `INSERT INTO ai_questions (user_id, course_id, question, answer, confidence, grounded, sources, model, input_tokens, output_tokens)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
-        userId, courseId ?? null, question, result.answer, result.confidence, result.groundedInCourseMaterial,
-        JSON.stringify(result.sources), response.model, response.usage.input_tokens, response.usage.output_tokens,
+        userId, courseId ?? null, question, answer.answer, answer.confidence, answer.groundedInCourseMaterial,
+        JSON.stringify(answer.sources), result.model, result.inputTokens, result.outputTokens,
       ],
     )
     .catch((err) => logger.error({ err }, 'Failed to log AI question'));
 
-  return result;
+  return answer;
 }
 
 function safeJson(s: string): unknown {
