@@ -14,6 +14,7 @@ import { packsRouter } from './modules/packs/packs.routes';
 import { syncRouter } from './modules/sync/sync.routes';
 import { progressRouter } from './modules/progress/progress.routes';
 import { aiRouter } from './modules/ai/ai.routes';
+import { navigatorRouter } from './modules/navigator/navigator.routes';
 import { scholarshipsRouter } from './modules/scholarships/scholarships.routes';
 import { careerRouter } from './modules/career/career.routes';
 import { adminRouter } from './modules/admin/admin.routes';
@@ -51,6 +52,7 @@ export function createApp() {
   app.use('/v1/sync', syncRouter);
   app.use('/v1/progress', progressRouter);
   app.use('/v1/ai', aiRouter);
+  app.use('/v1/navigator', navigatorRouter);
   app.use('/v1/scholarships', scholarshipsRouter);
   app.use('/v1/career', careerRouter);
   app.use('/v1/admin', adminRouter);

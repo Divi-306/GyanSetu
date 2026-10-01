@@ -10,6 +10,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { Markdown } from '@/components/Markdown';
 import { useLocalData } from '@/hooks/useLocalData';
+import { usePublishScreen } from '@/navigator/store';
 import { goBackOr } from '@/lib/nav';
 import { getLesson, getNote, markLessonCompleted, recordLessonOpened, saveNote } from '@/services/learning';
 import { selectOnline, useApp } from '@/stores/appStore';
@@ -76,10 +77,13 @@ function NotesEditor({ lessonId }: { lessonId: string }) {
   );
 }
 
+const NO_ITEMS: never[] = [];
+
 export default function LessonViewer() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const online = useApp(selectOnline);
   const { data } = useLocalData(() => getLesson(id), id);
+  usePublishScreen(NO_ITEMS, data?.lesson.courseId ?? null);
 
   useEffect(() => {
     void recordLessonOpened(id);

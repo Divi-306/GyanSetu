@@ -8,6 +8,12 @@ export type CompletionRequest = {
   user: string;
   /** JSON Schema the reply must match. */
   schema: Record<string, unknown>;
+  /** Name for the schema (OpenAI-compatible providers require one). */
+  schemaName?: string;
+  /** Upper bound on reply length; short structured replies can use less. */
+  maxTokens?: number;
+  /** Model for this call; defaults to AI_MODEL, then the provider default. */
+  model?: string;
 };
 
 export type CompletionResult =
@@ -27,6 +33,8 @@ type OpenAiCompatible = {
   defaultModel: string;
   /** Provider-specific request fields. */
   extra: Record<string, unknown>;
+  /** Which request field caps reply length for this provider. */
+  maxTokensField: string;
 };
 
 const GROQ: OpenAiCompatible = {
@@ -39,6 +47,7 @@ const GROQ: OpenAiCompatible = {
   // gpt-oss is a reasoning model: little reasoning suits short tutoring answers,
   // and the reasoning text itself isn't needed in the response.
   extra: { max_completion_tokens: 4000, reasoning_effort: 'low', include_reasoning: false },
+  maxTokensField: 'max_completion_tokens',
 };
 
 const XAI: OpenAiCompatible = {
@@ -48,10 +57,11 @@ const XAI: OpenAiCompatible = {
   apiKey: () => env.XAI_API_KEY,
   defaultModel: 'grok-4.7',
   extra: { max_tokens: 4000 },
+  maxTokensField: 'max_tokens',
 };
 
 async function completeOpenAiCompatible(p: OpenAiCompatible, req: CompletionRequest): Promise<CompletionResult> {
-  const model = env.AI_MODEL ?? p.defaultModel;
+  const model = req.model ?? env.AI_MODEL ?? p.defaultModel;
   let res: Response;
   try {
     res = await fetch(p.url, {
@@ -60,13 +70,14 @@ async function completeOpenAiCompatible(p: OpenAiCompatible, req: CompletionRequ
       body: JSON.stringify({
         model,
         ...p.extra,
+        ...(req.maxTokens ? { [p.maxTokensField]: req.maxTokens } : {}),
         messages: [
           { role: 'system', content: req.system },
           { role: 'user', content: req.user },
         ],
         response_format: {
           type: 'json_schema',
-          json_schema: { name: 'tutor_answer', strict: true, schema: req.schema },
+          json_schema: { name: req.schemaName ?? 'tutor_answer', strict: true, schema: req.schema },
         },
       }),
       signal: AbortSignal.timeout(60_000),
@@ -114,12 +125,12 @@ let anthropic: Anthropic | null = null;
 
 async function completeWithAnthropic(req: CompletionRequest): Promise<CompletionResult> {
   anthropic ??= new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, timeout: 60_000, maxRetries: 2 });
-  const model = env.AI_MODEL ?? ANTHROPIC_DEFAULT_MODEL;
+  const model = req.model ?? env.AI_MODEL ?? ANTHROPIC_DEFAULT_MODEL;
   let response;
   try {
     response = await anthropic.beta.messages.create({
       model,
-      max_tokens: 16000,
+      max_tokens: req.maxTokens ?? 16000,
       // If the model declines, the API re-runs the request on a fallback model in the same call.
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',

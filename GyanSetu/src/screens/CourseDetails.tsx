@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useLocalData } from '@/hooks/useLocalData';
+import { usePublishScreen } from '@/navigator/store';
 import { errorMessage } from '@/lib/api';
 import { formatBytes } from '@/lib/format';
 import { goBackOr } from '@/lib/nav';
@@ -132,6 +133,12 @@ function DownloadCard({ course }: { course: CourseDetail }) {
 export default function CourseDetails() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: course } = useLocalData(() => getCourse(id), id);
+  // The lessons on screen, and this course, for commands like 'open the second one' or 'start the next lesson'.
+  const screenItems = useMemo(
+    () => (course?.lessons ?? []).map((l) => ({ title: `Lesson ${l.position}: ${l.title}`, href: `/lesson/${l.id}` as const })),
+    [course],
+  );
+  usePublishScreen(screenItems, course?.id ?? null);
 
   if (course === undefined) return <View style={styles.container} />;
 

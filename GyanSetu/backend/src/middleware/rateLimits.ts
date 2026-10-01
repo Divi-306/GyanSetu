@@ -1,4 +1,4 @@
-import { rateLimit } from 'express-rate-limit';
+import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -25,4 +25,14 @@ export const syncLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.id ?? 'anonymous',
   message: { error: { code: 'RATE_LIMITED', message: 'Syncing too often. Try again in a minute.' } },
+});
+
+// AI Navigator: short commands, so a higher budget than the tutor. Guests share by IP.
+export const navigatorLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user?.id ? `user:${req.user.id}` : `ip:${ipKeyGenerator(req.ip ?? '')}`),
+  message: { error: { code: 'RATE_LIMITED', message: 'Too many navigator commands. Try again in a few minutes.' } },
 });

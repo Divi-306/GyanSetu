@@ -30,6 +30,11 @@ const EnvSchema = z.object({
     .string()
     .optional()
     .transform((v) => v?.trim() || undefined), // blank means "use the provider's default"
+  // Navigator commands are simple; a smaller model is faster and spares the tutor's rate limit.
+  NAVIGATOR_MODEL: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || undefined),
 
   GOOGLE_CLIENT_IDS: z.string().default(''),
 

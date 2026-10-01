@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { NavigatorHost } from '@/components/NavigatorHost';
 import { initApp, startConnectivity } from '@/services/bootstrap';
 import { useApp } from '@/stores/appStore';
 
@@ -27,7 +28,10 @@ export default function RootLayout() {
       <StatusBar style="dark" />
       <SafeAreaView style={styles.root} edges={['top', 'bottom']}>
         {ready ? (
-          <Stack screenOptions={{ headerShown: false, contentStyle: styles.screen, animation: 'slide_from_right' }} />
+          <>
+            <Stack screenOptions={{ headerShown: false, contentStyle: styles.screen, animation: 'slide_from_right' }} />
+            <NavigatorHost />
+          </>
         ) : (
           <View style={styles.splash}>
             {error ? <Text style={styles.error}>{error}</Text> : <ActivityIndicator color="#315C43" />}

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useLocalData } from '@/hooks/useLocalData';
+import { usePublishScreen } from '@/navigator/store';
 import { NetworkError } from '@/lib/api';
 import { formatBytes } from '@/lib/format';
 import { goBackOr } from '@/lib/nav';
@@ -60,6 +61,10 @@ export default function Courses() {
       setRefreshing(false);
     }
   };
+
+  // Lets the AI Navigator open 'the first one' on this screen.
+  const screenItems = useMemo(() => courses.map((c) => ({ title: c.title, href: `/course/${c.id}` as const })), [courses]);
+  usePublishScreen(screenItems);
 
   const catalogEmpty = data !== undefined && data.catalog.length === 0;
 

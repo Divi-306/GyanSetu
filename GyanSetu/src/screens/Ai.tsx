@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -34,7 +34,9 @@ const suggestedQuestions = [
 const CONFIDENCE = { high: 'High', medium: 'Medium', low: 'Low' } as const;
 
 export default function AI() {
-  const { courseId } = useLocalSearchParams<{ courseId?: string }>();
+  // q: a question handed over by the AI Navigator ("explain recursion"), asked automatically once.
+  const { courseId, q } = useLocalSearchParams<{ courseId?: string; q?: string }>();
+  const askedFromNavigator = useRef(false);
   const online = useApp(selectOnline);
   const authed = useApp((st) => st.sessionStatus === 'authed');
   const useOnlineAi = online && authed;
@@ -88,6 +90,17 @@ export default function AI() {
     setMessages((previous) => [...previous, aiMessage]);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50);
   };
+
+  useEffect(() => {
+    if (!q || askedFromNavigator.current) return;
+    // Deferred so it runs after the first render; the ref is set inside so a re-run of the effect can't skip it.
+    const timer = setTimeout(() => {
+      askedFromNavigator.current = true;
+      void askQuestion(q);
+    }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
   return (
     <KeyboardAvoidingView

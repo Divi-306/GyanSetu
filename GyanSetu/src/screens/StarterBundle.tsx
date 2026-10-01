@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -9,6 +9,7 @@ import {
 import { router } from 'expo-router';
 import { db } from '@/db';
 import { useLocalData } from '@/hooks/useLocalData';
+import { usePublishScreen } from '@/navigator/store';
 import { goBackOr } from '@/lib/nav';
 import { listStarterCourses } from '@/services/learning';
 
@@ -20,7 +21,10 @@ async function loadStarter() {
 }
 
 export default function StarterBundle() {
-  const { data: starterCourses = [] } = useLocalData(loadStarter);
+  const { data } = useLocalData(loadStarter);
+  const starterCourses = useMemo(() => data ?? [], [data]);
+  const screenItems = useMemo(() => starterCourses.map((c) => ({ title: c.title, href: `/course/${c.id}` as const })), [starterCourses]);
+  usePublishScreen(screenItems);
   const onBack = () => goBackOr('/courses');
   const onCoursePress = (course: { id: string }) => router.push(`/course/${course.id}`);
 

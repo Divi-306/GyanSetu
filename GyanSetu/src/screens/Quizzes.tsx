@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { db } from '@/db';
 import { useLocalData } from '@/hooks/useLocalData';
+import { usePublishScreen } from '@/navigator/store';
 import { goBackOr } from '@/lib/nav';
 import { listQuizzes } from '@/services/learning';
 
@@ -18,6 +19,8 @@ async function loadQuizzes() {
 /** Every quiz available on this phone (Starter Bundle demos + downloaded courses). */
 export default function Quizzes() {
   const { data: quizzes } = useLocalData(loadQuizzes);
+  const screenItems = useMemo(() => (quizzes ?? []).map((q) => ({ title: q.title, href: `/quiz/${q.id}` as const })), [quizzes]);
+  usePublishScreen(screenItems);
 
   return (
     <View style={styles.container}>
