@@ -36,6 +36,14 @@ const EnvSchema = z.object({
     .optional()
     .transform((v) => v?.trim() || undefined),
 
+  // Short educational videos for learning packs. Wikimedia Commons needs no key (public-domain /
+  // CC files, downloadable). YouTube is used only with a key, and is stream-only (its terms forbid downloads).
+  VIDEO_SOURCES: z.string().default('wikimedia,youtube'),
+  YOUTUBE_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v?.trim() || undefined),
+
   GOOGLE_CLIENT_IDS: z.string().default(''),
 
   SMTP_URL: z.string().optional(),

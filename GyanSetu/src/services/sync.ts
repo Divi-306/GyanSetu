@@ -11,11 +11,21 @@ export type SyncItemType =
   | 'QUIZ_ATTEMPT_CREATED'
   | 'NOTE_UPSERTED'
   | 'NOTE_DELETED'
-  | 'STORAGE_EVENT';
+  | 'STORAGE_EVENT'
+  | 'LP_LIBRARY_CHANGED'
+  | 'LP_PROGRESS_UPDATED'
+  | 'LP_TOPIC_UPDATED'
+  | 'LP_ANSWER_RECORDED'
+  | 'LP_CHAT_MESSAGE'
+  | 'LP_CHAT_CLEARED'
+  | 'LP_VIDEO_PROGRESS'
+  | 'LP_STUDY_TIME';
 
 type SyncResult = { id: string | null; status: 'applied' | 'duplicate' | 'rejected' | 'error'; code?: string; message?: string };
 
 const BATCH_SIZE = 200;
+/** Stay well under the API's 1 MB body limit: long tutor replies make some items large. */
+const BATCH_MAX_CHARS = 600_000;
 const LAST_PULL_KEY = 'sync.lastPullAt';
 const LAST_SYNC_KEY = 'sync.lastSyncAt';
 
@@ -71,11 +81,16 @@ async function doFlush() {
       );
       if (rows.length === 0) break;
 
+      // Oldest first, as many as fit; always at least one so a large item can't block the queue.
+      let size = 0;
+      const batch = rows.filter((r, i) => (size += r.payload_json.length + 200) <= BATCH_MAX_CHARS || i === 0);
+      const trimmed = batch.length < rows.length;
+
       const res = await api<{ serverTime: string; results: SyncResult[] }>('/v1/sync/batch', {
         method: 'POST',
         body: {
           deviceId,
-          items: rows.map((r) => ({ id: r.id, type: r.type, createdAt: r.created_at, payload: JSON.parse(r.payload_json) })),
+          items: batch.map((r) => ({ id: r.id, type: r.type, createdAt: r.created_at, payload: JSON.parse(r.payload_json) })),
         },
         timeoutMs: 30_000,
       });
@@ -104,7 +119,7 @@ async function doFlush() {
           }
         }
       });
-      if (rows.length < BATCH_SIZE) break;
+      if (rows.length < BATCH_SIZE && !trimmed) break;
     }
     // Synced rows have done their job; keep the table small.
     await db.runAsync("DELETE FROM sync_queue WHERE status = 'SYNCED'");
@@ -126,7 +141,18 @@ type PullResponse = {
   lessonCompletions: { lessonId: string; completedAt: string }[];
   quizAttempts: { id: string; quizId: string; answers: unknown; score: number; total: number; startedAt: string | null; submittedAt: string }[];
   notes: { id: string; lessonId: string; text: string; createdAt: string; updatedAt: string; deletedAt: string | null }[];
+  packLibrary?: { packId: string; version: number; state: 'active' | 'deleted'; updatedAt: string; title: string; icon: string; level: string; latestReadyVersion: number | null }[];
+  packProgress?: { packId: string; percent: number; currentTopicId: string | null; updatedAt: string }[];
+  packTopics?: { packId: string; topicId: string; completedAt: string | null; bookmarked: boolean; bookmarkUpdatedAt: string | null; timeSpentSec: number }[];
+  packAnswers?: { id: string; packId: string; packVersion: number; topicId: string; itemId: string; kind: string; correct: boolean; score: number; answeredAt: string }[];
+  packChat?: { id: string; packId: string; role: 'user' | 'tutor'; text: string; meta: unknown; createdAt: string }[];
+  packChatClears?: { packId: string; clearedAt: string }[];
+  packVideoProgress?: { packId: string; videoId: string; positionSec: number; durationSec: number | null; completedAt: string | null; updatedAt: string }[];
+  studyDays?: { day: string; seconds: number }[];
 };
+
+/** Server timestamps arrive in any ISO form; local rows compare as strings, so normalise. */
+const iso = (s: string | null) => (s ? new Date(s).toISOString() : null);
 
 /**
  * Merges server-side changes (another device, or a reinstall) into SQLite,
@@ -186,6 +212,86 @@ export async function pull() {
           n.createdAt,
           n.updatedAt,
           n.deletedAt,
+        );
+      }
+
+      // ── Learning packs: same merge rules as the server ──
+      for (const l of res.packLibrary ?? []) {
+        await db.runAsync(
+          `INSERT INTO lp_library (pack_id, version, state, title, icon, level, latest_version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(pack_id) DO UPDATE SET title = excluded.title, icon = excluded.icon, latest_version = excluded.latest_version,
+             version = CASE WHEN excluded.updated_at >= lp_library.updated_at THEN excluded.version ELSE lp_library.version END,
+             state = CASE WHEN excluded.updated_at >= lp_library.updated_at THEN excluded.state ELSE lp_library.state END,
+             updated_at = max(lp_library.updated_at, excluded.updated_at)`,
+          l.packId, l.version, l.state, l.title, l.icon, l.level, l.latestReadyVersion, iso(l.updatedAt),
+        );
+      }
+      for (const p of res.packProgress ?? []) {
+        await db.runAsync(
+          `INSERT INTO lp_progress (pack_id, percent, current_topic_id, updated_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(pack_id) DO UPDATE SET
+             percent = max(lp_progress.percent, excluded.percent),
+             current_topic_id = CASE WHEN excluded.updated_at >= lp_progress.updated_at
+                                     THEN coalesce(excluded.current_topic_id, lp_progress.current_topic_id)
+                                     ELSE lp_progress.current_topic_id END,
+             updated_at = max(lp_progress.updated_at, excluded.updated_at)`,
+          p.packId, p.percent, p.currentTopicId, iso(p.updatedAt),
+        );
+      }
+      for (const t of res.packTopics ?? []) {
+        await db.runAsync(
+          `INSERT INTO lp_topic_progress (pack_id, topic_id, completed_at, bookmarked, bookmark_updated_at, time_spent_sec)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(pack_id, topic_id) DO UPDATE SET
+             completed_at = CASE WHEN lp_topic_progress.completed_at IS NULL THEN excluded.completed_at
+                                 WHEN excluded.completed_at IS NULL THEN lp_topic_progress.completed_at
+                                 ELSE min(lp_topic_progress.completed_at, excluded.completed_at) END,
+             bookmarked = CASE WHEN excluded.bookmark_updated_at IS NOT NULL
+                                    AND (lp_topic_progress.bookmark_updated_at IS NULL OR excluded.bookmark_updated_at > lp_topic_progress.bookmark_updated_at)
+                               THEN excluded.bookmarked ELSE lp_topic_progress.bookmarked END,
+             bookmark_updated_at = CASE WHEN excluded.bookmark_updated_at IS NULL THEN lp_topic_progress.bookmark_updated_at
+                                        WHEN lp_topic_progress.bookmark_updated_at IS NULL THEN excluded.bookmark_updated_at
+                                        ELSE max(lp_topic_progress.bookmark_updated_at, excluded.bookmark_updated_at) END,
+             time_spent_sec = max(lp_topic_progress.time_spent_sec, excluded.time_spent_sec)`,
+          t.packId, t.topicId, iso(t.completedAt), t.bookmarked ? 1 : 0, iso(t.bookmarkUpdatedAt), t.timeSpentSec,
+        );
+      }
+      for (const a of res.packAnswers ?? []) {
+        await db.runAsync(
+          `INSERT INTO lp_answers (id, pack_id, pack_version, topic_id, item_id, kind, correct, score, answered_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`,
+          a.id, a.packId, a.packVersion, a.topicId, a.itemId, a.kind, a.correct ? 1 : 0, a.score, iso(a.answeredAt),
+        );
+      }
+      // Clears first: they remove everything up to their time, then newer messages are added.
+      for (const c of res.packChatClears ?? []) {
+        await db.runAsync('DELETE FROM lp_chat WHERE pack_id = ? AND created_at < ?', c.packId, iso(c.clearedAt));
+      }
+      for (const v of res.packVideoProgress ?? []) {
+        await db.runAsync(
+          `INSERT INTO lp_video_progress (pack_id, video_id, position_sec, duration_sec, completed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(pack_id, video_id) DO UPDATE SET
+             position_sec = CASE WHEN excluded.updated_at >= lp_video_progress.updated_at THEN excluded.position_sec ELSE lp_video_progress.position_sec END,
+             duration_sec = coalesce(excluded.duration_sec, lp_video_progress.duration_sec),
+             completed_at = CASE WHEN lp_video_progress.completed_at IS NULL THEN excluded.completed_at
+                                 WHEN excluded.completed_at IS NULL THEN lp_video_progress.completed_at
+                                 ELSE min(lp_video_progress.completed_at, excluded.completed_at) END,
+             updated_at = max(lp_video_progress.updated_at, excluded.updated_at)`,
+          v.packId, v.videoId, v.positionSec, v.durationSec, iso(v.completedAt), iso(v.updatedAt),
+        );
+      }
+      // The server sends totals across devices: keep whichever is larger.
+      for (const d of res.studyDays ?? []) {
+        await db.runAsync(
+          'INSERT INTO study_days (day, seconds) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET seconds = max(study_days.seconds, excluded.seconds)',
+          d.day, d.seconds,
+        );
+      }
+      for (const m of res.packChat ?? []) {
+        await db.runAsync(
+          `INSERT INTO lp_chat (id, pack_id, role, text, meta_json, created_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO NOTHING`,
+          m.id, m.packId, m.role, m.text, m.meta ? JSON.stringify(m.meta) : null, iso(m.createdAt),
         );
       }
     });

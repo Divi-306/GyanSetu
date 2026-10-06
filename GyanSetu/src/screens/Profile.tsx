@@ -221,21 +221,48 @@ export default function Profile() {
           </Text>
         </TouchableOpacity>
 
-        <View style={styles.infoCard}>
+        <TouchableOpacity style={styles.infoCard} onPress={() => router.push('/storage')}>
           <View style={styles.infoIcon}>
             <Text>💾</Text>
           </View>
 
           <View style={styles.infoContent}>
             <Text style={styles.infoTitle}>
-              Device Storage
+              Offline Storage
             </Text>
 
             <Text style={styles.infoSubtitle}>
-              GyanSetu uses {formatBytes(data?.packBytes ?? 0)} • {formatBytes(data?.freeBytes)} free
+              {formatBytes(data?.freeBytes)} free • manage packs, videos and compression
             </Text>
           </View>
-        </View>
+
+          <Text style={styles.arrow}>
+            ›
+          </Text>
+        </TouchableOpacity>
+
+        {/* Learning */}
+        <Text style={styles.sectionTitle}>
+          My Learning
+        </Text>
+
+        {[
+          { icon: '📈', title: 'Learning Progress', subtitle: 'Streaks, study time, strong and weak areas', href: '/progress' as const },
+          { icon: '💼', title: 'Career Guidance', subtitle: 'Paths and a roadmap based on what you learn', href: '/career' as const },
+          { icon: '🔔', title: 'Learning reminders', subtitle: 'Friendly nudges, frequency and quiet hours', href: '/settings/reminders' as const },
+          { icon: '🔒', title: 'Privacy & data', subtitle: 'What is stored, clear your learning history', href: '/settings/privacy' as const },
+        ].map((item) => (
+          <TouchableOpacity key={item.href} style={styles.infoCard} onPress={() => router.push(item.href)}>
+            <View style={styles.infoIcon}>
+              <Text>{item.icon}</Text>
+            </View>
+            <View style={styles.infoContent}>
+              <Text style={styles.infoTitle}>{item.title}</Text>
+              <Text style={styles.infoSubtitle}>{item.subtitle}</Text>
+            </View>
+            <Text style={styles.arrow}>›</Text>
+          </TouchableOpacity>
+        ))}
 
         {/* Sync */}
         <Text style={styles.sectionTitle}>

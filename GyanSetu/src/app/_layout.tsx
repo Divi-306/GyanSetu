@@ -1,4 +1,5 @@
-import { Stack } from 'expo-router';
+import * as Notifications from 'expo-notifications';
+import { router, Stack, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -21,6 +22,18 @@ export default function RootLayout() {
   useEffect(() => {
     if (!ready) return;
     return startConnectivity();
+  }, [ready]);
+
+  // Tapping a learning reminder opens the lesson it was about.
+  useEffect(() => {
+    if (!ready) return;
+    const open = (response: Notifications.NotificationResponse | null) => {
+      const url = response?.notification.request.content.data?.url;
+      if (typeof url === 'string' && url.startsWith('/')) router.push(url as Href);
+    };
+    void Notifications.getLastNotificationResponseAsync().then(open);
+    const sub = Notifications.addNotificationResponseReceivedListener(open);
+    return () => sub.remove();
   }, [ready]);
 
   return (

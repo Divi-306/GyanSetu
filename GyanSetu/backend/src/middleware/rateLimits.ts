@@ -36,3 +36,13 @@ export const navigatorLimiter = rateLimit({
   keyGenerator: (req) => (req.user?.id ? `user:${req.user.id}` : `ip:${ipKeyGenerator(req.ip ?? '')}`),
   message: { error: { code: 'RATE_LIMITED', message: 'Too many navigator commands. Try again in a few minutes.' } },
 });
+
+// Generating a learning pack costs a dozen long model calls: a tight daily budget per student.
+export const packGenerationLimiter = rateLimit({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id ?? 'anonymous',
+  message: { error: { code: 'RATE_LIMITED', message: 'You have created a lot of learning packs today. Try again tomorrow.' } },
+});

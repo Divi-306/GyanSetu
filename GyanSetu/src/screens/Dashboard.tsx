@@ -1,15 +1,32 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
+import { StorageNotices } from '@/components/packs/StorageNotices';
+import { ProgressBar } from '@/components/packs/ui';
 import { useLocalData } from '@/hooks/useLocalData';
+import { greeting } from '@/lib/dates';
+import { formatBytes } from '@/lib/format';
+import { getProgressOverview } from '@/services/analytics';
+import { cachedCareer } from '@/services/career';
 import { getContinueLearning } from '@/services/learning';
+import { listMyPacks } from '@/services/learningPacks';
+import { inactivityNudge } from '@/services/reminders';
+import { storageSummary } from '@/services/storage';
 import { selectOnline, useApp } from '@/stores/appStore';
+import { formatDuration } from '@/tutor/progress';
+
+/** Everything on the home screen, read locally: the dashboard works fully offline. */
+async function loadDashboard() {
+  const [overview, packs, course, career, nudge, storage] = await Promise.all([
+    getProgressOverview(),
+    listMyPacks(),
+    getContinueLearning(),
+    cachedCareer(),
+    inactivityNudge(),
+    storageSummary(),
+  ]);
+  return { overview, packs, course, career, nudge, storage };
+}
 
 export default function Dashboard() {
   const user = useApp((s) => s.user);
@@ -17,22 +34,9 @@ export default function Dashboard() {
   const online = useApp(selectOnline);
   const pending = useApp((s) => s.pendingSyncCount);
   const syncing = useApp((s) => s.syncing);
-  const { data: resume } = useLocalData(getContinueLearning);
+  const { data } = useLocalData(loadDashboard);
 
-  const greetingName = user?.name?.trim() ? user.name.split(' ')[0] : null;
-
-  const onMyCourses = () => router.push('/courses');
-  const onTakeQuiz = () => router.push('/quizzes');
-  const onAskAI = () => router.push('/ai');
-  const onScholarships = () => router.push('/scholarships');
-  const onProfile = () => router.push('/profile');
-  const onContinueLearning = () => {
-    if (!resume) router.push('/starter-bundle');
-    else if (resume.lastLessonId) router.push(`/lesson/${resume.lastLessonId}`);
-    else router.push(`/course/${resume.courseId}`);
-  };
-
-  const statusTitle = online ? 'Online' : 'Offline Mode';
+  const name = user?.name?.trim() ? user.name.split(' ')[0] : null;
   const statusText = syncing
     ? 'Saving your progress…'
     : pending > 0
@@ -44,527 +48,230 @@ export default function Dashboard() {
           ? 'Log in to back up your progress.'
           : 'Your progress is backed up.'
         : 'Your learning continues without internet.';
-  const percent = resume?.percent ?? 0;
+
+  const current = data?.overview.current ?? null;
+  const course = data?.course ?? null;
+  const streak = data?.overview.streaks;
+  const topPath = data?.career?.guidance?.paths[0] ?? null;
+  const recommended = [
+    ...(topPath?.nextPacks ?? []).map((p) => ({ label: `${p.subject} — ${p.durationDays} days`, go: () => router.push({ pathname: '/learn', params: { subject: p.subject, days: String(p.durationDays), goal: p.goal } }) })),
+    ...(data?.overview.weak ?? []).slice(0, 2).map((w) => ({ label: `Practise ${w.title}`, go: () => router.push({ pathname: '/packs/[id]/tutor', params: { id: w.packId, q: `Quiz me on ${w.title}` } }) })),
+  ].slice(0, 4);
+
+  const continueLearning = () => {
+    if (current) router.push(current.topicId ? `/packs/${current.packId}/topic/${current.topicId}` : `/packs/${current.packId}`);
+    else if (course?.lastLessonId) router.push(`/lesson/${course.lastLessonId}`);
+    else if (course) router.push(`/course/${course.courseId}`);
+    else router.push('/learn');
+  };
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.content}
-      >
-
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         {/* Header */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>
-              {greetingName
-                ? `Hello, ${greetingName} 👋`
-                : 'Hello 👋'}
-            </Text>
-
-            <Text style={styles.subtitle}>
-              Continue your learning journey
-            </Text>
+          <View style={styles.flex}>
+            <Text style={styles.greeting}>{name ? `${greeting()}, ${name}` : `${greeting()} 👋`}</Text>
+            <Text style={styles.subtitle}>What will you learn today?</Text>
           </View>
-
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={onProfile}
-          >
-            <Text style={styles.profileIcon}>
-              👤
-            </Text>
+          <TouchableOpacity style={styles.profileButton} onPress={() => router.push('/profile')} accessibilityLabel="Profile">
+            <Text style={styles.profileIcon}>👤</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Offline Status */}
-        <TouchableOpacity style={styles.offlineBanner} onPress={() => router.push('/offline')} activeOpacity={0.85}>
-          <View style={[styles.statusDot, !online && styles.statusDotOffline]} />
-
-          <View style={styles.offlineContent}>
-            <Text style={styles.offlineTitle}>
-              {statusTitle}
-            </Text>
-
-            <Text style={styles.offlineText}>
-              {statusText}
-            </Text>
-          </View>
+        {/* Online / offline */}
+        <TouchableOpacity style={styles.status} onPress={() => router.push('/offline')} activeOpacity={0.85}>
+          <Text style={styles.statusTitle}>{online ? '🟢 Online' : '🔴 Offline'}</Text>
+          <Text style={styles.statusText}>{statusText}</Text>
         </TouchableOpacity>
+
+        <StorageNotices />
+
+        {data?.nudge ? (
+          <Pressable style={styles.nudge} onPress={() => router.push(data.nudge!.url as never)}>
+            <Text style={styles.nudgeTitle}>{data.nudge.title}</Text>
+            <Text style={styles.nudgeText}>{data.nudge.body}</Text>
+            <Text style={styles.link}>Continue learning →</Text>
+          </Pressable>
+        ) : streak?.missedYesterday ? (
+          <View style={styles.nudge}>
+            <Text style={styles.nudgeText}>That’s okay. Let’s continue from where you left off.</Text>
+          </View>
+        ) : null}
 
         {/* Continue Learning */}
-        <Text style={styles.sectionTitle}>
-          Continue Learning
-        </Text>
-
-        <TouchableOpacity
-          style={styles.continueCard}
-          onPress={onContinueLearning}
-          activeOpacity={0.85}
-        >
-          <View style={styles.courseIcon}>
-            <Text style={styles.courseIconText}>
-              {resume?.icon ?? '📚'}
-            </Text>
-          </View>
-
-          <View style={styles.courseInfo}>
-            <Text style={styles.courseName}>
-              {resume ? resume.title : 'Start with the Starter Bundle'}
-            </Text>
-
-            <Text style={styles.lessonText}>
-              {resume
-                ? resume.lastLessonTitle
-                  ? `Continue: ${resume.lastLessonTitle}`
-                  : 'Continue where you left off'
-                : 'Sample lessons from 5 subjects, available offline'}
-            </Text>
-
-            <View style={styles.progressBackground}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { width: `${percent}%` },
-                ]}
-              />
-            </View>
-
-            <Text style={styles.progressText}>
-              {percent}% completed
-            </Text>
-          </View>
-
-          <Text style={styles.arrow}>
-            ›
+        <Text style={styles.sectionTitle}>Continue Learning</Text>
+        <Pressable style={styles.card} onPress={continueLearning}>
+          <Text style={styles.cardTitle}>
+            {current ? `${current.icon} ${current.title}` : course ? `${course.icon ?? '📚'} ${course.title}` : '✨ Learn anything'}
           </Text>
-        </TouchableOpacity>
-
-        {/* My Courses */}
-        <Text style={styles.sectionTitle}>
-          My Learning
-        </Text>
-
-        <TouchableOpacity
-          style={styles.myCoursesCard}
-          onPress={onMyCourses}
-          activeOpacity={0.85}
-        >
-          <View style={styles.myCoursesIcon}>
-            <Text style={styles.myCoursesIconText}>
-              📖
-            </Text>
-          </View>
-
-          <View style={styles.cardText}>
-            <Text style={styles.cardTitle}>
-              My Courses
-            </Text>
-
-            <Text style={styles.cardSubtitle}>
-              Browse courses and learning packs
-            </Text>
-          </View>
-
-          <Text style={styles.arrow}>
-            ›
+          <Text style={styles.muted}>
+            {current
+              ? current.durationDays && current.dayNumber
+                ? `Day ${current.dayNumber} / ${current.durationDays}${current.topicTitle ? ` · ${current.topicTitle}` : ''}`
+                : current.topicTitle ?? 'Continue where you left off'
+              : course
+                ? course.lastLessonTitle ?? 'Continue where you left off'
+                : 'Type any subject and choose how many days'}
           </Text>
-        </TouchableOpacity>
-
-        {/* Quick Actions */}
-        <Text style={styles.sectionTitle}>
-          Quick Actions
-        </Text>
-
-        <View style={styles.quickActions}>
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={onTakeQuiz}
-            activeOpacity={0.85}
-          >
-            <View style={styles.actionIcon}>
-              <Text>📝</Text>
+          {current || course ? (
+            <View style={styles.progressRow}>
+              <View style={styles.flex}>
+                <ProgressBar value={(current?.percent ?? course?.percent ?? 0) / 100} />
+              </View>
+              <Text style={styles.percent}>{current?.percent ?? course?.percent ?? 0}%</Text>
             </View>
+          ) : null}
+          <View style={styles.button}>
+            <Text style={styles.buttonText}>{current || course ? 'Continue' : 'Start'}</Text>
+          </View>
+        </Pressable>
 
-            <Text style={styles.actionTitle}>
-              Take Quiz
-            </Text>
+        {/* Progress */}
+        <Pressable style={styles.card} onPress={() => router.push('/progress')}>
+          <Text style={styles.cardTitle}>Your Progress</Text>
+          <View style={styles.statsRow}>
+            <Stat value={`${data?.overview.overallPercent ?? 0}%`} label="Overall" />
+            <Stat value={`🔥 ${streak?.current ?? 0}`} label={`day streak`} />
+            <Stat value={formatDuration(data?.overview.studySeconds ?? 0)} label="studied" />
+          </View>
+          <Text style={styles.link}>View progress →</Text>
+        </Pressable>
 
-            <Text style={styles.actionSubtitle}>
-              Practice offline
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={onAskAI}
-            activeOpacity={0.85}
-          >
-            <View style={styles.actionIcon}>
-              <Text>🤖</Text>
+        {/* Recommended */}
+        {recommended.length ? (
+          <>
+            <Text style={styles.sectionTitle}>Recommended for you</Text>
+            <View style={styles.card}>
+              {recommended.map((r) => (
+                <Pressable key={r.label} onPress={r.go} style={styles.recRow}>
+                  <Text style={styles.recText}>→ {r.label}</Text>
+                </Pressable>
+              ))}
             </View>
+          </>
+        ) : null}
 
-            <Text style={styles.actionTitle}>
-              Ask AI
-            </Text>
+        {/* Career */}
+        <Pressable style={styles.card} onPress={() => router.push('/career')}>
+          <Text style={styles.cardTitle}>💼 Career Guidance</Text>
+          <Text style={styles.muted}>
+            {topPath ? `Recommended path: ${topPath.title} · Match ${topPath.match}%` : 'See where your learning can lead, with a step-by-step roadmap.'}
+          </Text>
+          <Text style={styles.link}>{topPath ? 'View career roadmap →' : 'Open →'}</Text>
+        </Pressable>
 
-            <Text style={styles.actionSubtitle}>
-              Clear your doubts
-            </Text>
-          </TouchableOpacity>
+        {/* Learning packs */}
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>Learning Packs</Text>
+          <Pressable onPress={() => router.push('/packs')}>
+            <Text style={styles.link}>See all</Text>
+          </Pressable>
+        </View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.packs}>
+          <Pressable style={[styles.pack, styles.newPack]} onPress={() => router.push('/learn')}>
+            <Text style={styles.packIcon}>✨</Text>
+            <Text style={styles.packTitle}>Learn anything</Text>
+            <Text style={styles.muted}>{online ? 'New pack' : 'Needs internet'}</Text>
+          </Pressable>
+          {(data?.packs ?? []).filter((p) => online || (p.onDevice && p.offline)).slice(0, 8).map((p) => (
+            <Pressable key={p.packId} style={styles.pack} onPress={() => router.push(p.onDevice ? `/packs/${p.packId}` : `/packs/preview/${p.packId}`)}>
+              <Text style={styles.packIcon}>{p.icon}</Text>
+              <Text style={styles.packTitle} numberOfLines={2}>{p.title}</Text>
+              <Text style={styles.muted}>{p.percent}%{p.offline ? ' · offline' : ''}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* Storage */}
+        <Pressable style={styles.card} onPress={() => router.push('/storage')}>
+          <Text style={styles.cardTitle}>Storage</Text>
+          <Text style={styles.muted}>
+            {formatBytes(data?.storage.totalBytes ?? 0)} used · {formatBytes(data?.storage.deviceFreeBytes ?? 0)} free
+          </Text>
+          <View style={styles.storageBar}>
+            <ProgressBar value={(data?.storage.totalBytes ?? 0) / Math.max(1, (data?.storage.totalBytes ?? 0) + (data?.storage.deviceFreeBytes ?? 1))} />
+          </View>
+          <Text style={styles.link}>Manage storage →</Text>
+        </Pressable>
+
+        {/* Quick actions (existing features) */}
+        <Text style={styles.sectionTitle}>More</Text>
+        <View style={styles.quick}>
+          <Quick icon="🤖" label="Ask AI" onPress={() => router.push('/ai')} />
+          <Quick icon="📝" label="Quizzes" onPress={() => router.push('/quizzes')} />
+          <Quick icon="🎓" label="Scholarships" onPress={() => router.push('/scholarships')} />
+          <Quick icon="📖" label="Classic courses" onPress={() => router.push('/courses')} />
         </View>
 
-        {/* Scholarships */}
-        <TouchableOpacity
-          style={styles.scholarshipCard}
-          onPress={onScholarships}
-          activeOpacity={0.85}
-        >
-          <View style={styles.scholarshipIcon}>
-            <Text>🎓</Text>
-          </View>
-
-          <View style={styles.cardText}>
-            <Text style={styles.cardTitle}>
-              Scholarships
-            </Text>
-
-            <Text style={styles.cardSubtitle}>
-              Discover opportunities matching your profile
-            </Text>
-          </View>
-
-          <Text style={styles.arrow}>
-            ›
-          </Text>
-        </TouchableOpacity>
-
-        {/* Offline Learning */}
-        <View style={styles.bottomCard}>
-          <Text style={styles.bottomIcon}>
-            🌱
-          </Text>
-
-          <View style={styles.bottomText}>
-            <Text style={styles.bottomTitle}>
-              Learning continues
-            </Text>
-
-            <Text style={styles.bottomSubtitle}>
-              Your progress is saved on this device
-              and can sync when you’re back online.
-            </Text>
-          </View>
-        </View>
-
-        {isGuest && (
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.push('/login')}
-          >
-            <Text style={styles.backButtonText}>
-              Log in or create an account
-            </Text>
+        {isGuest ? (
+          <TouchableOpacity style={styles.login} onPress={() => router.push('/login')}>
+            <Text style={styles.loginText}>Log in or create an account</Text>
           </TouchableOpacity>
-        )}
-
+        ) : null}
       </ScrollView>
     </View>
   );
 }
 
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={styles.stat}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.muted}>{label}</Text>
+    </View>
+  );
+}
+
+function Quick({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.quickCard} onPress={onPress} activeOpacity={0.85}>
+      <Text style={styles.quickIcon}>{icon}</Text>
+      <Text style={styles.quickLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const styles = StyleSheet.create({
-  statusDotOffline: {
-    backgroundColor: '#D79A35',
-  },
-
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFDF8',
-  },
-
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 22,
-  },
-
-  greeting: {
-    fontSize: 25,
-    fontWeight: '700',
-    color: '#20352A',
-    marginBottom: 5,
-  },
-
-  subtitle: {
-    fontSize: 13,
-    color: '#7A847D',
-  },
-
-  profileButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#E8F0E4',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  profileIcon: {
-    fontSize: 21,
-  },
-
-  offlineBanner: {
-    backgroundColor: '#F1F6ED',
-    borderRadius: 17,
-    padding: 15,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 27,
-    borderWidth: 1,
-    borderColor: '#E1EADB',
-  },
-
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#5D9568',
-    marginRight: 12,
-  },
-
-  offlineContent: {
-    flex: 1,
-  },
-
-  offlineTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#315C43',
-    marginBottom: 3,
-  },
-
-  offlineText: {
-    fontSize: 11,
-    color: '#728078',
-  },
-
-  sectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#20352A',
-    marginBottom: 12,
-    marginTop: 3,
-  },
-
-  continueCard: {
-    backgroundColor: '#F3F7EF',
-    borderRadius: 20,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 27,
-  },
-
-  courseIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    backgroundColor: '#DCE9D8',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  courseIconText: {
-    fontSize: 23,
-  },
-
-  courseInfo: {
-    flex: 1,
-    marginLeft: 13,
-  },
-
-  courseName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#263A2E',
-    marginBottom: 4,
-  },
-
-  lessonText: {
-    fontSize: 11,
-    color: '#7A847D',
-    marginBottom: 9,
-  },
-
-  progressBackground: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#D9E2D5',
-    overflow: 'hidden',
-  },
-
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: '#5C8865',
-  },
-
-  progressText: {
-    fontSize: 10,
-    color: '#6E7A71',
-    marginTop: 5,
-  },
-
-  arrow: {
-    fontSize: 26,
-    color: '#9AA39C',
-    marginLeft: 8,
-  },
-
-  myCoursesCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E7ECE3',
-    marginBottom: 27,
-  },
-
-  myCoursesIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    backgroundColor: '#EEF4EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  myCoursesIconText: {
-    fontSize: 22,
-  },
-
-  cardText: {
-    flex: 1,
-    marginLeft: 13,
-  },
-
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#293B30',
-    marginBottom: 4,
-  },
-
-  cardSubtitle: {
-    fontSize: 11,
-    lineHeight: 17,
-    color: '#7A847D',
-  },
-
-  quickActions: {
-    flexDirection: 'row',
-    gap: 11,
-    marginBottom: 12,
-  },
-
-  actionCard: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#E7ECE3',
-  },
-
-  actionIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
-    backgroundColor: '#EEF4EA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 11,
-  },
-
-  actionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#293B30',
-    marginBottom: 4,
-  },
-
-  actionSubtitle: {
-    fontSize: 10,
-    color: '#7A847D',
-  },
-
-  scholarshipCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E7ECE3',
-    marginBottom: 24,
-  },
-
-  scholarshipIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 15,
-    backgroundColor: '#F2F0E5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  bottomCard: {
-    backgroundColor: '#F5F7F2',
-    borderRadius: 18,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-
-  bottomIcon: {
-    fontSize: 24,
-  },
-
-  bottomText: {
-    flex: 1,
-    marginLeft: 12,
-  },
-
-  bottomTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#315C43',
-    marginBottom: 4,
-  },
-
-  bottomSubtitle: {
-    fontSize: 10,
-    lineHeight: 16,
-    color: '#7A847D',
-  },
-
-  backButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-
-  backButtonText: {
-    fontSize: 12,
-    color: '#718078',
-  },
+  container: { flex: 1, backgroundColor: '#FFFDF8' },
+  content: { padding: 20, paddingBottom: 40 },
+  flex: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  greeting: { fontSize: 24, fontWeight: '700', color: '#20352A', marginBottom: 4 },
+  subtitle: { fontSize: 13, color: '#7A847D' },
+  profileButton: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#E8F0E4', alignItems: 'center', justifyContent: 'center' },
+  profileIcon: { fontSize: 21 },
+  status: { backgroundColor: '#F1F6ED', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#DCE7D6' },
+  statusTitle: { fontSize: 14, fontWeight: '700', color: '#20352A', marginBottom: 2 },
+  statusText: { fontSize: 12, color: '#66756A' },
+  nudge: { backgroundColor: '#FFF8E8', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#F1E2BC' },
+  nudgeTitle: { fontSize: 15, fontWeight: '700', color: '#5C4210', marginBottom: 4 },
+  nudgeText: { fontSize: 14, lineHeight: 20, color: '#4A564C' },
+  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  sectionTitle: { fontSize: 17, fontWeight: '700', color: '#20352A', marginTop: 6, marginBottom: 10 },
+  card: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 16, borderWidth: 1, borderColor: '#E7ECE3', marginBottom: 14 },
+  cardTitle: { fontSize: 16, fontWeight: '700', color: '#20352A', marginBottom: 4 },
+  muted: { fontSize: 12, color: '#7A847D', lineHeight: 18 },
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  percent: { fontSize: 13, fontWeight: '700', color: '#315C43', width: 40, textAlign: 'right' },
+  button: { marginTop: 12, backgroundColor: '#5F8068', borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
+  buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 8 },
+  stat: { alignItems: 'center', flex: 1 },
+  statValue: { fontSize: 18, fontWeight: '800', color: '#20352A' },
+  link: { color: '#5F8068', fontWeight: '700', fontSize: 13, marginTop: 6 },
+  recRow: { paddingVertical: 8 },
+  recText: { fontSize: 14, color: '#315C43', fontWeight: '600' },
+  packs: { gap: 10, paddingBottom: 14 },
+  pack: { width: 130, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E7ECE3' },
+  newPack: { backgroundColor: '#F1F6ED', borderColor: '#DCE7D6' },
+  packIcon: { fontSize: 26, marginBottom: 6 },
+  packTitle: { fontSize: 14, fontWeight: '700', color: '#20352A', marginBottom: 4 },
+  storageBar: { marginTop: 10 },
+  quick: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
+  quickCard: { flexBasis: '47%', flexGrow: 1, backgroundColor: '#FFFFFF', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E7ECE3', alignItems: 'center' },
+  quickIcon: { fontSize: 22, marginBottom: 4 },
+  quickLabel: { fontSize: 13, fontWeight: '600', color: '#20352A' },
+  login: { borderWidth: 1.5, borderColor: '#5F8068', borderRadius: 14, paddingVertical: 13, alignItems: 'center' },
+  loginText: { color: '#4F765C', fontWeight: '700', fontSize: 15 },
 });

@@ -11,6 +11,7 @@ import { authRouter } from './modules/auth/auth.routes';
 import { usersRouter } from './modules/users/users.routes';
 import { coursesRouter, starterRouter } from './modules/courses/courses.routes';
 import { packsRouter } from './modules/packs/packs.routes';
+import { learningPacksRouter } from './modules/learningPacks/learningPacks.routes';
 import { syncRouter } from './modules/sync/sync.routes';
 import { progressRouter } from './modules/progress/progress.routes';
 import { aiRouter } from './modules/ai/ai.routes';
@@ -49,6 +50,7 @@ export function createApp() {
   app.use('/v1/courses', coursesRouter);
   app.use('/v1/starter-bundle', starterRouter);
   app.use('/v1/packs', packsRouter);
+  app.use('/v1/learning-packs', learningPacksRouter);
   app.use('/v1/sync', syncRouter);
   app.use('/v1/progress', progressRouter);
   app.use('/v1/ai', aiRouter);

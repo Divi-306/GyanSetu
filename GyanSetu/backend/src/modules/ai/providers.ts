@@ -14,6 +14,8 @@ export type CompletionRequest = {
   maxTokens?: number;
   /** Model for this call; defaults to AI_MODEL, then the provider default. */
   model?: string;
+  /** Request timeout. Long generations (learning packs) need more than the tutor's 60 s. */
+  timeoutMs?: number;
 };
 
 export type CompletionResult =
@@ -80,7 +82,7 @@ async function completeOpenAiCompatible(p: OpenAiCompatible, req: CompletionRequ
           json_schema: { name: req.schemaName ?? 'tutor_answer', strict: true, schema: req.schema },
         },
       }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(req.timeoutMs ?? 60_000),
     });
   } catch (err) {
     logger.error({ err, provider: p.name }, 'AI request failed');
@@ -137,7 +139,7 @@ async function completeWithAnthropic(req: CompletionRequest): Promise<Completion
       output_config: { effort: 'low', format: { type: 'json_schema', schema: req.schema } },
       system: req.system,
       messages: [{ role: 'user', content: req.user }],
-    });
+    }, { timeout: req.timeoutMs ?? 60_000 });
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) throw busy();
     if (err instanceof Anthropic.APIError) {

@@ -23,7 +23,8 @@
     "plugins": [
       "expo-sqlite",
       "expo-secure-store",
-      "expo-router"
+      "expo-router",
+      "expo-video"
     ],
     "scheme": "gyansetu"
   }

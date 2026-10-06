@@ -398,6 +398,14 @@ export async function clearStudentData() {
     DELETE FROM quiz_attempts;
     DELETE FROM notes;
     DELETE FROM sync_queue;
+    DELETE FROM lp_library;
+    DELETE FROM lp_progress;
+    DELETE FROM lp_topic_progress;
+    DELETE FROM lp_answers;
+    DELETE FROM lp_chat;
+    DELETE FROM lp_video_progress;
+    DELETE FROM study_days;
+    DELETE FROM kv WHERE key LIKE 'tutor.session.%' OR key LIKE 'career.%' OR key LIKE 'storage.notice%' OR key LIKE 'reminder.%';
   `);
   useApp.getState().bumpData();
   await refreshPendingCount();

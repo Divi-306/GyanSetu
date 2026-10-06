@@ -18,6 +18,8 @@ export default defineConfig({
       XAI_API_KEY: '',
       ANTHROPIC_API_KEY: '',
       AI_MODEL: '',
+      VIDEO_SOURCES: '', // tests that need videos stub the providers and switch them on
+      YOUTUBE_API_KEY: '',
       SMTP_URL: '',
     },
   },

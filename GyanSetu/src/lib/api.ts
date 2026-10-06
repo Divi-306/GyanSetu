@@ -99,7 +99,18 @@ type ApiOptions = {
   timeoutMs?: number;
 };
 
-export async function api<T>(path: string, opts: ApiOptions = {}, retry = true): Promise<T> {
+export async function api<T>(path: string, opts: ApiOptions = {}): Promise<T> {
+  const res = await request(path, opts);
+  return (res.status === 204 ? undefined : await res.json()) as T;
+}
+
+/** Like api(), but returns the body as text, unparsed: for content verified by checksum. */
+export async function apiText(path: string, opts: ApiOptions = {}): Promise<{ text: string; headers: Headers }> {
+  const res = await request(path, opts);
+  return { text: await res.text(), headers: res.headers };
+}
+
+async function request(path: string, opts: ApiOptions, retry = true): Promise<Response> {
   const { method = 'GET', body, auth = true, timeoutMs = 20_000 } = opts;
   const token = auth ? await SecureStore.getItemAsync(ACCESS) : null;
   const res = await rawFetch(
@@ -118,7 +129,7 @@ export async function api<T>(path: string, opts: ApiOptions = {}, retry = true):
 
   if (res.status === 401 && auth && token && retry) {
     refreshing ??= refreshTokens().finally(() => (refreshing = null));
-    if (await refreshing) return api<T>(path, opts, false);
+    if (await refreshing) return request(path, opts, false);
   }
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
@@ -129,7 +140,7 @@ export async function api<T>(path: string, opts: ApiOptions = {}, retry = true):
       payload?.error?.details,
     );
   }
-  return (res.status === 204 ? undefined : await res.json()) as T;
+  return res;
 }
 
 /** Liveness probe used for the online indicator: true only if the API answers quickly. */

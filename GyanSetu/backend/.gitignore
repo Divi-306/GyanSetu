@@ -5,3 +5,4 @@ storage/packs
 storage/media
 coverage
 storage-test
+*.log

@@ -18,7 +18,7 @@ import type { SearchResult } from '@/navigator/types';
 import { selectOnline, useApp } from '@/stores/appStore';
 
 /** Screens where the floating button would get in the way (sign-in flows, chat, quiz). */
-const HIDDEN = [/^\/$/, /^\/login$/, /^\/signup$/, /^\/forgot-password$/, /^\/reset-password$/, /^\/ai$/, /^\/quiz\//];
+const HIDDEN = [/^\/$/, /^\/login$/, /^\/signup$/, /^\/forgot-password$/, /^\/reset-password$/, /^\/ai$/, /^\/quiz\//, /^\/packs\/[^/]+\/tutor$/];
 
 function suggestionsFor(route: string): string[] {
   if (route.startsWith('/course/') || route.startsWith('/lesson/')) {

@@ -131,6 +131,8 @@ GROQ_API_KEY=<your key>       # set the key for whichever provider you chose
 
 Get a Groq key at https://console.groq.com/keys. Leave `AI_MODEL` / `NAVIGATOR_MODEL` blank to use defaults.
 
+Learning-pack videos: Wikimedia Commons works with no key (openly licensed, downloadable for offline). To also suggest YouTube videos (stream-only), set `YOUTUBE_API_KEY` (YouTube Data API v3). `VIDEO_SOURCES=` (empty) turns videos off.
+
 **d. Optional**
 
 | Variable | Leave blank → |
@@ -148,7 +150,10 @@ Keep `DATABASE_URL=postgres://gyansetu:gyansetu@localhost:5435/gyansetu` unless 
 # in backend/
 npm run migrate        # applies db/migrations/*.sql
 npm run seed           # loads db/seed/seed.sql and builds the offline learning packs
+npm run convert-courses  # turns the curated courses into dynamic learning packs (no AI key needed)
 ```
+
+Generating new learning packs ("Learn Anything") needs the AI key from step 5c.
 
 The seed writes pack files to `backend/storage/packs/` (git-ignored, so each machine builds its own). To force new pack versions later: `npm run seed -- --rebuild`.
 

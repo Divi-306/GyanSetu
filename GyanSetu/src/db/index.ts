@@ -137,6 +137,213 @@ export async function migrate() {
     version = 1;
   }
 
+  if (version < 2) {
+    await db.execAsync(`
+      -- ── Dynamic learning packs (AI-generated, any subject) ──
+      -- The verified pack JSON lives in the file system (file_uri); these tables are
+      -- its queryable copy. offline = 1 once the student chose "Download"; packs
+      -- opened without downloading are cached with offline = 0 and are hidden offline.
+      CREATE TABLE IF NOT EXISTS lp_packs (
+        pack_id           TEXT PRIMARY KEY NOT NULL,
+        version           INTEGER NOT NULL,
+        title             TEXT NOT NULL,
+        subject           TEXT NOT NULL,
+        description       TEXT NOT NULL DEFAULT '',
+        category          TEXT NOT NULL,
+        level_from        TEXT NOT NULL,
+        level_to          TEXT NOT NULL,
+        icon              TEXT NOT NULL,
+        module_count      INTEGER NOT NULL,
+        topic_count       INTEGER NOT NULL,
+        estimated_minutes INTEGER NOT NULL DEFAULT 0,
+        size_bytes        INTEGER NOT NULL,
+        sha256            TEXT NOT NULL,
+        file_uri          TEXT NOT NULL,
+        offline           INTEGER NOT NULL DEFAULT 0,
+        state             TEXT NOT NULL CHECK (state IN ('ACTIVE', 'FAILED')),
+        latest_version    INTEGER,          -- newest ready version the server reported
+        downloaded_at     TEXT NOT NULL,
+        last_opened_at    TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS lp_modules (
+        pack_id        TEXT NOT NULL,
+        id             TEXT NOT NULL,
+        position       INTEGER NOT NULL,
+        title          TEXT NOT NULL,
+        description    TEXT NOT NULL,
+        summary        TEXT NOT NULL,
+        revision_notes TEXT NOT NULL,
+        PRIMARY KEY (pack_id, id)
+      );
+
+      -- content_json: the topic without its question bank (that is in lp_items).
+      CREATE TABLE IF NOT EXISTS lp_topics (
+        pack_id      TEXT NOT NULL,
+        id           TEXT NOT NULL,
+        module_id    TEXT NOT NULL,
+        position     INTEGER NOT NULL,   -- order within the whole pack
+        title        TEXT NOT NULL,
+        difficulty   TEXT NOT NULL,
+        content_json TEXT NOT NULL,
+        PRIMARY KEY (pack_id, id)
+      );
+      CREATE INDEX IF NOT EXISTS lp_topics_order_idx ON lp_topics (pack_id, position);
+
+      -- Question bank: MCQs, viva, practice, flashcards. source 'online' = extra questions
+      -- fetched later from the server; they survive pack updates.
+      CREATE TABLE IF NOT EXISTS lp_items (
+        pack_id      TEXT NOT NULL,
+        id           TEXT NOT NULL,
+        topic_id     TEXT NOT NULL,
+        kind         TEXT NOT NULL CHECK (kind IN ('mcq', 'viva', 'practice', 'flashcard')),
+        payload_json TEXT NOT NULL,
+        source       TEXT NOT NULL DEFAULT 'pack',
+        PRIMARY KEY (pack_id, id)
+      );
+      CREATE INDEX IF NOT EXISTS lp_items_topic_idx ON lp_items (pack_id, topic_id, kind);
+
+      -- Retrieval units for the offline tutor (paragraphs, key points, examples, glossary).
+      CREATE TABLE IF NOT EXISTS lp_chunks (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        pack_id  TEXT NOT NULL,
+        topic_id TEXT,                     -- null for glossary / module-level text
+        field    TEXT NOT NULL,
+        label    TEXT NOT NULL,
+        text     TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS lp_chunks_pack_idx ON lp_chunks (pack_id);
+
+      -- ── Student data for packs (written locally first, synced via sync_queue) ──
+      -- The account's library, as last pulled/pushed (restores "My Learning Packs" on a new phone).
+      CREATE TABLE IF NOT EXISTS lp_library (
+        pack_id        TEXT PRIMARY KEY NOT NULL,
+        version        INTEGER NOT NULL,
+        state          TEXT NOT NULL CHECK (state IN ('active', 'deleted')),
+        title          TEXT NOT NULL,
+        icon           TEXT NOT NULL,
+        level          TEXT,
+        latest_version INTEGER,
+        updated_at     TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS lp_progress (
+        pack_id          TEXT PRIMARY KEY NOT NULL,
+        percent          INTEGER NOT NULL DEFAULT 0,
+        current_topic_id TEXT,
+        updated_at       TEXT NOT NULL
+      );
+
+      -- Rows are kept when a topic disappears in a newer pack version; they come back if it returns.
+      CREATE TABLE IF NOT EXISTS lp_topic_progress (
+        pack_id             TEXT NOT NULL,
+        topic_id            TEXT NOT NULL,
+        completed_at        TEXT,
+        bookmarked          INTEGER NOT NULL DEFAULT 0,
+        bookmark_updated_at TEXT,
+        time_spent_sec      INTEGER NOT NULL DEFAULT 0,
+        last_seen_at        TEXT,
+        PRIMARY KEY (pack_id, topic_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS lp_answers (
+        id           TEXT PRIMARY KEY NOT NULL,
+        pack_id      TEXT NOT NULL,
+        pack_version INTEGER NOT NULL,
+        topic_id     TEXT NOT NULL,
+        item_id      TEXT NOT NULL,
+        kind         TEXT NOT NULL,
+        correct      INTEGER NOT NULL,
+        score        REAL NOT NULL,
+        response     TEXT,
+        answered_at  TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS lp_answers_topic_idx ON lp_answers (pack_id, topic_id, answered_at);
+
+      -- Tutor conversation, per pack. Synced to the student's other devices (LP_CHAT_MESSAGE / LP_CHAT_CLEARED).
+      CREATE TABLE IF NOT EXISTS lp_chat (
+        id         TEXT PRIMARY KEY NOT NULL,
+        pack_id    TEXT NOT NULL,
+        role       TEXT NOT NULL CHECK (role IN ('user', 'tutor')),
+        text       TEXT NOT NULL,
+        meta_json  TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS lp_chat_pack_idx ON lp_chat (pack_id, created_at);
+    `);
+    version = 2;
+  }
+
+  if (version < 3) {
+    await db.execAsync(`
+      -- ── Learning OS: day plans, videos, storage optimisation, study time ──
+      ALTER TABLE lp_packs ADD COLUMN duration_days INTEGER;
+      ALTER TABLE lp_packs ADD COLUMN daily_minutes INTEGER;
+      ALTER TABLE lp_packs ADD COLUMN goal TEXT;
+      ALTER TABLE lp_packs ADD COLUMN depth TEXT;
+      ALTER TABLE lp_packs ADD COLUMN plan_json TEXT;          -- coverage, outcomes, not covered, career paths
+      ALTER TABLE lp_packs ADD COLUMN optimized_at TEXT;       -- set while optional data is compressed/offloaded
+      ALTER TABLE lp_packs ADD COLUMN bytes_saved INTEGER NOT NULL DEFAULT 0;
+
+      ALTER TABLE lp_topics ADD COLUMN kind TEXT NOT NULL DEFAULT 'lesson';
+      ALTER TABLE lp_topics ADD COLUMN day_number INTEGER;
+
+      CREATE TABLE IF NOT EXISTS lp_days (
+        pack_id             TEXT NOT NULL,
+        day_number          INTEGER NOT NULL,
+        title               TEXT NOT NULL,
+        focus               TEXT NOT NULL,
+        topic_ids_json      TEXT NOT NULL,
+        estimated_minutes   INTEGER NOT NULL,
+        completion_criteria TEXT NOT NULL,
+        PRIMARY KEY (pack_id, day_number)
+      );
+
+      -- Videos: pack videos (from provider APIs) and the student's own imports (source 'user',
+      -- never uploaded). status: remote (not on the phone) | downloaded | offloaded (removed to
+      -- save space, re-downloadable). wanted_offline remembers the student chose to keep it.
+      CREATE TABLE IF NOT EXISTS lp_videos (
+        pack_id        TEXT NOT NULL,
+        id             TEXT NOT NULL,
+        topic_id       TEXT NOT NULL,
+        title          TEXT NOT NULL,
+        description    TEXT NOT NULL DEFAULT '',
+        duration_sec   REAL,
+        source         TEXT NOT NULL,
+        url            TEXT NOT NULL,
+        download_url   TEXT,
+        thumbnail      TEXT,
+        license        TEXT NOT NULL DEFAULT '',
+        attribution    TEXT NOT NULL DEFAULT '',
+        downloadable   INTEGER NOT NULL DEFAULT 0,
+        size_bytes     INTEGER,
+        local_uri      TEXT,
+        status         TEXT NOT NULL DEFAULT 'remote' CHECK (status IN ('remote', 'downloaded', 'offloaded')),
+        wanted_offline INTEGER NOT NULL DEFAULT 0,
+        added_at       TEXT NOT NULL,
+        PRIMARY KEY (pack_id, id)
+      );
+      CREATE INDEX IF NOT EXISTS lp_videos_topic_idx ON lp_videos (pack_id, topic_id);
+
+      CREATE TABLE IF NOT EXISTS lp_video_progress (
+        pack_id      TEXT NOT NULL,
+        video_id     TEXT NOT NULL,
+        position_sec REAL NOT NULL DEFAULT 0,
+        duration_sec REAL,
+        completed_at TEXT,
+        updated_at   TEXT NOT NULL,
+        PRIMARY KEY (pack_id, video_id)
+      );
+
+      -- Study time per local calendar day: streaks, weekly activity, reminders.
+      CREATE TABLE IF NOT EXISTS study_days (
+        day        TEXT PRIMARY KEY NOT NULL,   -- YYYY-MM-DD, device local time
+        seconds    INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+    version = 3;
+  }
+
   await db.execAsync(`PRAGMA user_version = ${version}`);
 }
 

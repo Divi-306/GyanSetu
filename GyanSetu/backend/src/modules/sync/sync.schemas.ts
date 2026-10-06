@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 const Iso = z.iso.datetime({ offset: true });
 const base = { id: z.uuid(), createdAt: Iso };
+// Learning-pack topic ids are slugs ("tcp-handshake"), stable across pack versions.
+const TopicId = z.string().regex(/^[\p{L}\p{M}\p{N}-]{1,80}$/u);
 
 export const SyncItem = z.discriminatedUnion('type', [
   z.object({
@@ -59,6 +61,92 @@ export const SyncItem = z.discriminatedUnion('type', [
       eventType: z.enum(['downloaded', 'archived', 'restored', 'cleanup_warned', 'kept', 'deleted']),
       occurredAt: Iso,
     }),
+  }),
+
+  // ── Dynamic learning packs ──
+  z.object({
+    ...base,
+    type: z.literal('LP_LIBRARY_CHANGED'),
+    payload: z.object({ packId: z.uuid(), version: z.number().int().min(1), state: z.enum(['active', 'deleted']), updatedAt: Iso }),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('LP_PROGRESS_UPDATED'),
+    payload: z.object({
+      packId: z.uuid(),
+      percent: z.number().int().min(0).max(100),
+      currentTopicId: TopicId.nullable(),
+      updatedAt: Iso,
+    }),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('LP_TOPIC_UPDATED'),
+    payload: z.object({
+      packId: z.uuid(),
+      topicId: TopicId,
+      completedAt: Iso.nullable().optional(),
+      bookmarked: z.boolean().optional(),
+      timeSpentDeltaSec: z.number().int().min(0).max(86_400).optional(),
+      updatedAt: Iso,
+    }),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('LP_ANSWER_RECORDED'),
+    payload: z.object({
+      answerId: z.uuid(),
+      packId: z.uuid(),
+      packVersion: z.number().int().min(1),
+      topicId: TopicId,
+      itemId: z.string().min(1).max(200),
+      kind: z.enum(['mcq', 'viva', 'practice', 'flashcard']),
+      correct: z.boolean(),
+      score: z.number().min(0).max(1),
+      answeredAt: Iso,
+    }),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('LP_CHAT_MESSAGE'),
+    payload: z.object({
+      messageId: z.uuid(),
+      packId: z.uuid(),
+      role: z.enum(['user', 'tutor']),
+      text: z.string().min(1).max(20_000),
+      meta: z
+        .object({
+          mode: z.enum(['online', 'offline']).optional(),
+          quickReplies: z.array(z.string().max(200)).max(8).optional(),
+          sources: z.array(z.string().max(300)).max(8).optional(),
+          grounded: z.boolean().optional(),
+        })
+        .nullable(),
+      createdAt: Iso,
+    }),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('LP_CHAT_CLEARED'),
+    payload: z.object({ packId: z.uuid(), clearedAt: Iso }),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('LP_VIDEO_PROGRESS'),
+    payload: z.object({
+      packId: z.uuid(),
+      videoId: z.string().min(1).max(200),
+      positionSec: z.number().min(0).max(86_400),
+      durationSec: z.number().min(0).max(86_400).nullable(),
+      completedAt: Iso.nullable().optional(),
+      updatedAt: Iso,
+    }),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('LP_STUDY_TIME'),
+    // The student's local calendar date, so streaks match their days, not UTC.
+    payload: z.object({ day: z.iso.date(), secondsDelta: z.number().int().min(1).max(86_400) }),
   }),
 ]);
 

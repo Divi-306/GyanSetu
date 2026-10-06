@@ -1,11 +1,31 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { pool } from '../../db/pool';
 import { requireAuth } from '../../middleware/auth';
+import { aiLimiter } from '../../middleware/rateLimits';
+import { getGuidance, refreshGuidance, roadmapFor } from './guidance.service';
 
 export const careerRouter = Router();
 careerRouter.use(requireAuth);
 
-// GET /v1/career/recommendations
+// ── GET /v1/career/guidance : cached AI guidance (works for the app's offline cache too) ──
+careerRouter.get('/guidance', async (req, res) => {
+  res.json(await getGuidance(req.user!.id));
+});
+
+// ── POST /v1/career/guidance/refresh : regenerate when the learning evidence changed ──
+careerRouter.post('/guidance/refresh', aiLimiter, async (req, res) => {
+  const { force } = z.object({ force: z.boolean().default(false) }).parse(req.body ?? {});
+  res.json(await refreshGuidance(req.user!.id, force));
+});
+
+// ── POST /v1/career/roadmap : roadmap for one recommended path ──
+careerRouter.post('/roadmap', aiLimiter, async (req, res) => {
+  const { path } = z.object({ path: z.string().trim().min(1).max(120) }).parse(req.body);
+  res.json({ roadmap: await roadmapFor(req.user!.id, path) });
+});
+
+// GET /v1/career/recommendations (legacy: fixed career_paths over the classic courses; kept for old clients)
 // Deterministic and explainable: every score comes with the reasons behind it,
 // and the same logic can run on the device from local progress.
 careerRouter.get('/recommendations', async (req, res) => {
