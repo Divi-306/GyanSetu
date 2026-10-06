@@ -12,8 +12,10 @@ import {
 import { errorMessage } from '@/lib/api';
 import { goBackOr } from '@/lib/nav';
 import { requestPasswordReset } from '@/services/account';
+import { useTranslation } from '@/i18n';
 
 export default function ForgotPassword() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -53,7 +55,7 @@ export default function ForgotPassword() {
           <Text style={styles.backArrow}>‹</Text>
 
           <Text style={styles.backText}>
-            Back to Login
+            {t('auth.backToLogin')}
           </Text>
         </Pressable>
 
@@ -69,25 +71,23 @@ export default function ForgotPassword() {
               </View>
 
               <Text style={styles.title}>
-                Forgot Password?
+                {t('auth.forgotPasswordTitle')}
               </Text>
 
               <Text style={styles.subtitle}>
-                No worries. Enter your registered email
-                or phone and we’ll help you reset your
-                password.
+                {t('auth.forgotPasswordDescription')}
               </Text>
 
             </View>
 
             {/* Email */}
             <Text style={styles.label}>
-              Email or Phone
+              {t('auth.identifier')}
             </Text>
 
             <TextInput
               style={styles.input}
-              placeholder="Enter your email or phone"
+              placeholder={t('auth.identifierPlaceholder')}
               placeholderTextColor="#9A9E9B"
               value={email}
               onChangeText={setEmail}
@@ -113,7 +113,7 @@ export default function ForgotPassword() {
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.resetText}>
-                  Send Reset Link
+                  {t('auth.sendResetLink')}
                 </Text>
               )}
             </Pressable>
@@ -129,13 +129,11 @@ export default function ForgotPassword() {
             </View>
 
             <Text style={styles.successTitle}>
-              Check your inbox
+              {t('auth.checkInbox')}
             </Text>
 
             <Text style={styles.successText}>
-              If an account exists for this email or
-              phone, you’ll receive instructions to
-              reset your password.
+              {t('auth.resetInstructions')}
             </Text>
 
             <Pressable
@@ -143,7 +141,7 @@ export default function ForgotPassword() {
               onPress={() => setSent(false)}
             >
               <Text style={styles.tryAgainText}>
-                Try another email
+                {t('auth.tryAnotherEmail')}
               </Text>
             </Pressable>
 

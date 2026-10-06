@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { errorMessage } from '@/lib/api';
+import { useTranslation } from '@/i18n';
 import { goBackOr } from '@/lib/nav';
 import { EMPTY_PROFILE, getProfile, saveProfile, updateUser, type Profile } from '@/services/account';
 import { useApp } from '@/stores/appStore';
@@ -19,27 +20,28 @@ import { useApp } from '@/stores/appStore';
 type Option<T> = { value: T; label: string };
 
 const GENDERS: Option<NonNullable<Profile['gender']>>[] = [
-  { value: 'female', label: 'Female' },
-  { value: 'male', label: 'Male' },
-  { value: 'other', label: 'Other' },
-  { value: 'prefer_not', label: 'Prefer not to say' },
+  { value: 'female', label: 'profileEdit.female' },
+  { value: 'male', label: 'profileEdit.male' },
+  { value: 'other', label: 'profileEdit.other' },
+  { value: 'prefer_not', label: 'profileEdit.preferNotToSay' },
 ];
 const CATEGORIES: Option<NonNullable<Profile['category']>>[] = ['GEN', 'OBC', 'SC', 'ST', 'EWS'].map((c) => ({
   value: c as NonNullable<Profile['category']>,
   label: c,
 }));
 const LEVELS: Option<NonNullable<Profile['educationLevel']>>[] = [
-  { value: 'school', label: 'School' },
-  { value: 'diploma', label: 'Diploma' },
-  { value: 'undergraduate', label: 'Undergraduate' },
-  { value: 'postgraduate', label: 'Postgraduate' },
+  { value: 'school', label: 'profileEdit.school' },
+  { value: 'diploma', label: 'profileEdit.diploma' },
+  { value: 'undergraduate', label: 'profileEdit.undergraduate' },
+  { value: 'postgraduate', label: 'profileEdit.postgraduate' },
 ];
 const PWD: Option<boolean>[] = [
-  { value: true, label: 'Yes' },
-  { value: false, label: 'No' },
+  { value: true, label: 'profileEdit.yes' },
+  { value: false, label: 'profileEdit.no' },
 ];
 
 function Chips<T>({ options, value, onChange }: { options: Option<T>[]; value: T | null; onChange: (v: T | null) => void }) {
+  const { t } = useTranslation();
   return (
     <View style={styles.chips}>
       {options.map((o) => {
@@ -51,7 +53,7 @@ function Chips<T>({ options, value, onChange }: { options: Option<T>[]; value: T
             // Tapping the selected chip clears it: "I'd rather not say" is always possible.
             onPress={() => onChange(active ? null : o.value)}
           >
-            <Text style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</Text>
+            <Text style={[styles.chipText, active && styles.chipTextActive]}>{t(o.label)}</Text>
           </Pressable>
         );
       })}
@@ -72,6 +74,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const nullIfBlank = (s: string) => (s.trim() ? s.trim() : null);
 
 export default function ProfileEdit() {
+  const { t } = useTranslation();
   const user = useApp((s) => s.user);
   const [name, setName] = useState(user?.name ?? '');
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -99,17 +102,17 @@ export default function ProfileEdit() {
     if (!profile) return;
     setError(null);
     if (profile.dateOfBirth && !/^\d{4}-\d{2}-\d{2}$/.test(profile.dateOfBirth)) {
-      setError('Date of birth must look like 2006-05-21 (year-month-day).');
+      setError(t('profileEdit.invalidDateOfBirth'));
       return;
     }
     const incomeValue = income.trim() ? Number(income.replace(/[,\s₹]/g, '')) : null;
     if (incomeValue !== null && (!Number.isInteger(incomeValue) || incomeValue < 0)) {
-      setError('Family income must be a whole number of rupees per year.');
+      setError(t('profileEdit.invalidIncome'));
       return;
     }
     const semesterValue = semester.trim() ? Number(semester) : null;
     if (semesterValue !== null && (!Number.isInteger(semesterValue) || semesterValue < 1 || semesterValue > 12)) {
-      setError('Semester must be between 1 and 12.');
+      setError(t('profileEdit.invalidSemester'));
       return;
     }
 
@@ -141,37 +144,37 @@ export default function ProfileEdit() {
         <Pressable style={styles.backButton} onPress={() => goBackOr('/profile')}>
           <Text style={styles.backText}>‹</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
+        <Text style={styles.headerTitle}>{t('profileEdit.title')}</Text>
       </View>
 
       {!profile ? (
         <View style={styles.center}>
           {loadError ? (
-            <Text style={styles.hint}>{loadError} Your profile can only be edited while online.</Text>
+            <Text style={styles.hint}>{loadError} {t('profileEdit.onlineRequired')}</Text>
           ) : (
             <ActivityIndicator color="#315C43" />
           )}
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <Field label="Full name">
+          <Field label={t('auth.fullName')}>
             <TextInput style={styles.input} value={name} onChangeText={setName} autoCapitalize="words" />
           </Field>
 
-          <Text style={styles.section}>Education</Text>
-          <Field label="Education level">
+          <Text style={styles.section}>{t('profileEdit.education')}</Text>
+          <Field label={t('profileEdit.educationLevel')}>
             <Chips options={LEVELS} value={profile.educationLevel} onChange={(v) => set('educationLevel', v)} />
           </Field>
-          <Field label="Institution">
+          <Field label={t('profileEdit.institution')}>
             <TextInput style={styles.input} value={profile.institution ?? ''} onChangeText={(v) => set('institution', v)} />
           </Field>
-          <Field label="Course and semester">
+          <Field label={t('profileEdit.courseAndSemester')}>
             <View style={styles.row}>
               <TextInput
                 style={[styles.input, styles.flex]}
                 value={profile.currentCourse ?? ''}
                 onChangeText={(v) => set('currentCourse', v)}
-                placeholder="e.g. Diploma in CS"
+                placeholder={t('profileEdit.coursePlaceholder')}
                 placeholderTextColor="#9AA39C"
               />
               <TextInput
@@ -179,50 +182,49 @@ export default function ProfileEdit() {
                 value={semester}
                 onChangeText={setSemester}
                 keyboardType="number-pad"
-                placeholder="Sem"
+                placeholder={t('profileEdit.semesterPlaceholder')}
                 placeholderTextColor="#9AA39C"
                 maxLength={2}
               />
             </View>
           </Field>
-          <Field label="Interests" hint="Comma-separated, e.g. coding, data, networking. Used for career guidance.">
+          <Field label={t('profileEdit.interests')} hint={t('profileEdit.interestsHint')}>
             <TextInput style={styles.input} value={interests} onChangeText={setInterests} autoCapitalize="none" />
           </Field>
 
-          <Text style={styles.section}>For scholarship matching</Text>
-          <Field label="Date of birth" hint="Year-month-day, e.g. 2006-05-21">
+          <Text style={styles.section}>{t('profileEdit.scholarshipMatching')}</Text>
+          <Field label={t('profileEdit.dateOfBirth')} hint={t('profileEdit.dateFormatHint')}>
             <TextInput
               style={styles.input}
               value={profile.dateOfBirth ?? ''}
               onChangeText={(v) => set('dateOfBirth', v)}
-              placeholder="YYYY-MM-DD"
+              placeholder={t('profileEdit.datePlaceholder')}
               placeholderTextColor="#9AA39C"
               keyboardType="numbers-and-punctuation"
               maxLength={10}
             />
           </Field>
-          <Field label="Gender">
+          <Field label={t('profileEdit.gender')}>
             <Chips options={GENDERS} value={profile.gender} onChange={(v) => set('gender', v)} />
           </Field>
-          <Field label="State">
-            <TextInput style={styles.input} value={profile.state ?? ''} onChangeText={(v) => set('state', v)} placeholder="e.g. Bihar" placeholderTextColor="#9AA39C" />
+          <Field label={t('profileEdit.state')}>
+            <TextInput style={styles.input} value={profile.state ?? ''} onChangeText={(v) => set('state', v)} placeholder={t('profileEdit.statePlaceholder')} placeholderTextColor="#9AA39C" />
           </Field>
-          <Field label="Category">
+          <Field label={t('profileEdit.category')}>
             <Chips options={CATEGORIES} value={profile.category} onChange={(v) => set('category', v)} />
           </Field>
-          <Field label="Annual family income (₹)">
-            <TextInput style={styles.input} value={income} onChangeText={setIncome} keyboardType="number-pad" placeholder="e.g. 180000" placeholderTextColor="#9AA39C" />
+          <Field label={t('profileEdit.familyIncome')}>
+            <TextInput style={styles.input} value={income} onChangeText={setIncome} keyboardType="number-pad" placeholder={t('profileEdit.incomePlaceholder')} placeholderTextColor="#9AA39C" />
           </Field>
-          <Field label="Person with disability">
+          <Field label={t('profileEdit.personWithDisability')}>
             <Chips options={PWD} value={profile.isPwd} onChange={(v) => set('isPwd', v)} />
           </Field>
 
           <View style={styles.consent}>
             <View style={styles.flex}>
-              <Text style={styles.consentTitle}>Use these details to match scholarships</Text>
+              <Text style={styles.consentTitle}>{t('profileEdit.useDetailsForMatching')}</Text>
               <Text style={styles.hint}>
-                Category, income and disability status are sensitive. GyanSetu uses them only for matching, and only
-                while this is on. Deleting your account erases them.
+                {t('profileEdit.sensitiveDetailsNotice')}
               </Text>
             </View>
             <Switch value={profile.dataConsent} onValueChange={(v) => set('dataConsent', v)} trackColor={{ true: '#7FB08C' }} thumbColor={profile.dataConsent ? '#315C43' : undefined} />
@@ -231,7 +233,7 @@ export default function ProfileEdit() {
           {error && <Text style={styles.error}>{error}</Text>}
 
           <Pressable style={[styles.saveButton, saving && styles.saving]} onPress={save} disabled={saving}>
-            {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveText}>Save</Text>}
+            {saving ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.saveText}>{t('common.save')}</Text>}
           </Pressable>
         </ScrollView>
       )}

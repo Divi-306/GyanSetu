@@ -9,7 +9,7 @@ CREATE TABLE users (
   password_hash      text,                        -- null for Google-only accounts
   google_sub         text UNIQUE,
   role               text NOT NULL DEFAULT 'student' CHECK (role IN ('student', 'admin')),
-  preferred_language text NOT NULL DEFAULT 'en' CHECK (preferred_language IN ('en', 'hi')),
+  preferred_language text NOT NULL DEFAULT 'en' CHECK (preferred_language IN ('en', 'hi', 'mr', 'bn', 'ta', 'te', 'gu')),
   email_verified_at  timestamptz,
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now(),

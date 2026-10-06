@@ -13,9 +13,11 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { errorMessage } from '@/lib/api';
 import { goBackOr } from '@/lib/nav';
 import { resetPassword } from '@/services/account';
+import { useTranslation } from '@/i18n';
 
 /** Opened from the email link gyansetu://reset-password?token=… */
 export default function ResetPassword() {
+  const { t } = useTranslation();
   const { token } = useLocalSearchParams<{ token?: string }>();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -26,11 +28,11 @@ export default function ResetPassword() {
   const handleSubmit = async () => {
     setError(null);
     if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setError(t('auth.passwordLength'));
       return;
     }
     if (password !== confirm) {
-      setError('The two passwords do not match.');
+      setError(t('auth.passwordMismatch'));
       return;
     }
     setBusy(true);
@@ -52,30 +54,30 @@ export default function ResetPassword() {
       <View style={styles.content}>
         <Pressable style={styles.backButton} onPress={() => goBackOr('/login')}>
           <Text style={styles.backArrow}>‹</Text>
-          <Text style={styles.backText}>Back to Login</Text>
+          <Text style={styles.backText}>{t('auth.backToLogin')}</Text>
         </Pressable>
 
         <View style={styles.header}>
           <View style={styles.iconCircle}>
             <Text style={styles.icon}>{done ? '✓' : '🔑'}</Text>
           </View>
-          <Text style={styles.title}>{done ? 'Password updated' : 'Set a new password'}</Text>
+          <Text style={styles.title}>{done ? t('auth.passwordUpdated') : t('auth.setNewPassword')}</Text>
           <Text style={styles.subtitle}>
             {done
-              ? 'You can now log in with your new password on any device.'
+              ? t('auth.passwordUpdatedDescription')
               : !token
-                ? 'This reset link is incomplete. Open the link from your email again, or request a new one.'
-                : 'Choose a password with at least 8 characters.'}
+                ? t('auth.incompleteResetLink')
+                : t('auth.choosePassword')}
           </Text>
         </View>
 
         {done ? (
           <Pressable style={styles.button} onPress={() => router.replace('/login')}>
-            <Text style={styles.buttonText}>Go to Login</Text>
+            <Text style={styles.buttonText}>{t('auth.goToLogin')}</Text>
           </Pressable>
         ) : token ? (
           <>
-            <Text style={styles.label}>New password</Text>
+            <Text style={styles.label}>{t('auth.newPassword')}</Text>
             <TextInput
               style={styles.input}
               value={password}
@@ -83,10 +85,10 @@ export default function ResetPassword() {
               secureTextEntry
               autoCapitalize="none"
               autoComplete="new-password"
-              placeholder="At least 8 characters"
+              placeholder={t('auth.passwordLength')}
               placeholderTextColor="#9A9E9B"
             />
-            <Text style={[styles.label, styles.labelSpaced]}>Confirm password</Text>
+            <Text style={[styles.label, styles.labelSpaced]}>{t('auth.confirmPassword')}</Text>
             <TextInput
               style={styles.input}
               value={confirm}
@@ -94,7 +96,7 @@ export default function ResetPassword() {
               secureTextEntry
               autoCapitalize="none"
               autoComplete="new-password"
-              placeholder="Type it again"
+              placeholder={t('auth.typePasswordAgain')}
               placeholderTextColor="#9A9E9B"
               onSubmitEditing={handleSubmit}
             />
@@ -104,12 +106,12 @@ export default function ResetPassword() {
               onPress={handleSubmit}
               disabled={busy}
             >
-              {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Update Password</Text>}
+              {busy ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>{t('auth.updatePassword')}</Text>}
             </Pressable>
           </>
         ) : (
           <Pressable style={styles.button} onPress={() => router.replace('/forgot-password')}>
-            <Text style={styles.buttonText}>Request a new link</Text>
+            <Text style={styles.buttonText}>{t('auth.requestNewLink')}</Text>
           </Pressable>
         )}
       </View>

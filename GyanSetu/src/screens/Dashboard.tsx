@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useTranslation } from '@/i18n';
 import { useLocalData } from '@/hooks/useLocalData';
 import { getContinueLearning } from '@/services/learning';
 import { selectOnline, useApp } from '@/stores/appStore';
 
 export default function Dashboard() {
+  const { t } = useTranslation();
   const user = useApp((s) => s.user);
   const isGuest = useApp((s) => s.sessionStatus !== 'authed');
   const online = useApp(selectOnline);
@@ -32,18 +34,18 @@ export default function Dashboard() {
     else router.push(`/course/${resume.courseId}`);
   };
 
-  const statusTitle = online ? 'Online' : 'Offline Mode';
+  const statusTitle = online ? t('common.online') : t('dashboard.offlineMode');
   const statusText = syncing
-    ? 'Saving your progress…'
+    ? t('dashboard.savingProgress')
     : pending > 0
       ? isGuest
-        ? `${pending} change${pending === 1 ? '' : 's'} saved on this device. Log in to back them up.`
-        : `${pending} change${pending === 1 ? '' : 's'} will sync when you're online.`
+        ? t('dashboard.guestChangesSaved', { count: pending })
+        : t('dashboard.changesWaitingToSync', { count: pending })
       : online
         ? isGuest
-          ? 'Log in to back up your progress.'
-          : 'Your progress is backed up.'
-        : 'Your learning continues without internet.';
+          ? t('dashboard.logInToBackUp')
+          : t('dashboard.progressBackedUp')
+        : t('dashboard.learningWithoutInternet');
   const percent = resume?.percent ?? 0;
 
   return (
@@ -58,12 +60,12 @@ export default function Dashboard() {
           <View>
             <Text style={styles.greeting}>
               {greetingName
-                ? `Hello, ${greetingName} 👋`
-                : 'Hello 👋'}
+                ? t('dashboard.greetingWithName', { name: greetingName })
+                : t('dashboard.greeting')}
             </Text>
 
             <Text style={styles.subtitle}>
-              Continue your learning journey
+              {t('auth.continueJourney')}
             </Text>
           </View>
 
@@ -94,7 +96,7 @@ export default function Dashboard() {
 
         {/* Continue Learning */}
         <Text style={styles.sectionTitle}>
-          Continue Learning
+          {t('navigation.continueLearning')}
         </Text>
 
         <TouchableOpacity
@@ -110,15 +112,15 @@ export default function Dashboard() {
 
           <View style={styles.courseInfo}>
             <Text style={styles.courseName}>
-              {resume ? resume.title : 'Start with the Starter Bundle'}
+              {resume ? resume.title : t('dashboard.startStarterBundle')}
             </Text>
 
             <Text style={styles.lessonText}>
               {resume
                 ? resume.lastLessonTitle
-                  ? `Continue: ${resume.lastLessonTitle}`
-                  : 'Continue where you left off'
-                : 'Sample lessons from 5 subjects, available offline'}
+                  ? t('dashboard.continueLesson', { title: resume.lastLessonTitle })
+                  : t('dashboard.continueWhereLeftOff')
+                : t('dashboard.sampleLessonsOffline')}
             </Text>
 
             <View style={styles.progressBackground}>
@@ -131,7 +133,7 @@ export default function Dashboard() {
             </View>
 
             <Text style={styles.progressText}>
-              {percent}% completed
+              {t('dashboard.percentCompleted', { percent })}
             </Text>
           </View>
 
@@ -142,7 +144,7 @@ export default function Dashboard() {
 
         {/* My Courses */}
         <Text style={styles.sectionTitle}>
-          My Learning
+          {t('navigation.myLearning')}
         </Text>
 
         <TouchableOpacity
@@ -158,11 +160,11 @@ export default function Dashboard() {
 
           <View style={styles.cardText}>
             <Text style={styles.cardTitle}>
-              My Courses
+              {t('navigation.courses')}
             </Text>
 
             <Text style={styles.cardSubtitle}>
-              Browse courses and learning packs
+              {t('dashboard.browseCourses')}
             </Text>
           </View>
 
@@ -173,7 +175,7 @@ export default function Dashboard() {
 
         {/* Quick Actions */}
         <Text style={styles.sectionTitle}>
-          Quick Actions
+          {t('navigation.quickActions')}
         </Text>
 
         <View style={styles.quickActions}>
@@ -187,11 +189,11 @@ export default function Dashboard() {
             </View>
 
             <Text style={styles.actionTitle}>
-              Take Quiz
+              {t('navigation.takeQuiz')}
             </Text>
 
             <Text style={styles.actionSubtitle}>
-              Practice offline
+              {t('navigation.practiceOffline')}
             </Text>
           </TouchableOpacity>
 
@@ -205,11 +207,11 @@ export default function Dashboard() {
             </View>
 
             <Text style={styles.actionTitle}>
-              Ask AI
+              {t('navigation.ai')}
             </Text>
 
             <Text style={styles.actionSubtitle}>
-              Clear your doubts
+              {t('navigation.clearDoubts')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -226,11 +228,11 @@ export default function Dashboard() {
 
           <View style={styles.cardText}>
             <Text style={styles.cardTitle}>
-              Scholarships
+              {t('navigation.scholarships')}
             </Text>
 
             <Text style={styles.cardSubtitle}>
-              Discover opportunities matching your profile
+              {t('dashboard.scholarshipDescription')}
             </Text>
           </View>
 
@@ -247,12 +249,11 @@ export default function Dashboard() {
 
           <View style={styles.bottomText}>
             <Text style={styles.bottomTitle}>
-              Learning continues
+              {t('dashboard.learningContinues')}
             </Text>
 
             <Text style={styles.bottomSubtitle}>
-              Your progress is saved on this device
-              and can sync when you’re back online.
+              {t('dashboard.progressSavedLocally')}
             </Text>
           </View>
         </View>
@@ -263,7 +264,7 @@ export default function Dashboard() {
             onPress={() => router.push('/login')}
           >
             <Text style={styles.backButtonText}>
-              Log in or create an account
+              {t('dashboard.logInOrCreateAccount')}
             </Text>
           </TouchableOpacity>
         )}

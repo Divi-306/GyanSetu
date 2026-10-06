@@ -8,12 +8,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useTranslation } from '@/i18n';
 import { useLocalData } from '@/hooks/useLocalData';
 import { goBackOr } from '@/lib/nav';
 import { getQuiz, recordQuizAttempt } from '@/services/learning';
 import { useApp } from '@/stores/appStore';
 
 export default function OfflineQuiz() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: quiz } = useLocalData(() => getQuiz(id), id);
   const authed = useApp((s) => s.sessionStatus === 'authed');
@@ -31,10 +33,10 @@ export default function OfflineQuiz() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.resultContainer}>
-          <Text style={styles.resultTitle}>Quiz not available</Text>
-          <Text style={styles.resultSubtitle}>Download the course to take this quiz offline.</Text>
+          <Text style={styles.resultTitle}>{t('quiz.unavailable')}</Text>
+          <Text style={styles.resultSubtitle}>{t('quiz.downloadToPlay')}</Text>
           <Pressable style={styles.primaryButton} onPress={onBack}>
-            <Text style={styles.primaryButtonText}>Go back</Text>
+            <Text style={styles.primaryButtonText}>{t('common.back')}</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -67,18 +69,18 @@ export default function OfflineQuiz() {
           <Text style={styles.resultIcon}>✓</Text>
 
           <Text style={styles.resultTitle}>
-            Quiz Completed
+            {t('quiz.completed')}
           </Text>
 
           <Text style={styles.resultSubtitle}>
             {authed
-              ? 'Your result is saved and will sync to your account.'
-              : 'Your result is saved on this phone.'}
+              ? t('quiz.resultSynced')
+              : t('quiz.resultLocal')}
           </Text>
 
           <View style={styles.scoreCard}>
             <Text style={styles.scoreLabel}>
-              Your Score
+              {t('quiz.yourScore')}
             </Text>
 
             <Text style={styles.score}>
@@ -86,7 +88,7 @@ export default function OfflineQuiz() {
             </Text>
 
             <Text style={styles.offlineLabel}>
-              ● Saved Offline
+              {t('quiz.savedOffline')}
             </Text>
           </View>
 
@@ -101,7 +103,7 @@ export default function OfflineQuiz() {
                   {right ? '✓ ' : '✗ '}
                   {q.options[picked ?? 0]}
                 </Text>
-                {!right && <Text style={styles.reviewCorrect}>Correct: {q.options[q.correctIndex]}</Text>}
+                {!right && <Text style={styles.reviewCorrect}>{t('quiz.correct', { answer: q.options[q.correctIndex] })}</Text>}
                 {q.explanation && <Text style={styles.reviewExplanation}>{q.explanation}</Text>}
               </View>
             );
@@ -112,7 +114,7 @@ export default function OfflineQuiz() {
             onPress={() => router.replace('/dashboard')}
           >
             <Text style={styles.primaryButtonText}>
-              Back to Dashboard
+              {t('quiz.backToDashboard')}
             </Text>
           </Pressable>
 
@@ -142,7 +144,7 @@ export default function OfflineQuiz() {
           </Text>
 
           <Text style={styles.headerSubtitle}>
-            Offline Mode
+            {t('quiz.offlineMode')}
           </Text>
         </View>
       </View>
@@ -152,7 +154,7 @@ export default function OfflineQuiz() {
         <View style={styles.greenDot} />
 
         <Text style={styles.offlineText}>
-          Offline quiz • Your answers are saved locally
+          {t('quiz.offlineBanner')}
         </Text>
       </View>
 
@@ -160,7 +162,7 @@ export default function OfflineQuiz() {
       <View style={styles.progressSection}>
         <View style={styles.progressTop}>
           <Text style={styles.questionNumber}>
-            Question {currentQuestion + 1} of {questions.length}
+            {t('quiz.questionNumber', { current: currentQuestion + 1, total: questions.length })}
           </Text>
 
           <Text style={styles.progressPercent}>
@@ -239,8 +241,8 @@ export default function OfflineQuiz() {
       >
         <Text style={styles.nextButtonText}>
           {currentQuestion === questions.length - 1
-            ? 'Finish Quiz'
-            : 'Next Question'}
+            ? t('quiz.finish')
+            : t('quiz.nextQuestion')}
         </Text>
 
         <Text style={styles.nextArrow}>

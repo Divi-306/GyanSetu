@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useTranslation } from '@/i18n';
 import { useLocalData } from '@/hooks/useLocalData';
 import { usePublishScreen } from '@/navigator/store';
 import { NetworkError } from '@/lib/api';
@@ -36,6 +37,7 @@ function statusBadge(course: CourseSummary, downloading: { receivedBytes: number
 }
 
 export default function Courses() {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<Tab>('All');
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export default function Courses() {
     try {
       await refreshCatalog();
     } catch (err) {
-      setRefreshError(err instanceof NetworkError ? "You're offline. Showing saved courses." : 'Could not refresh courses.');
+      setRefreshError(err instanceof NetworkError ? t('courseList.savedCoursesOffline') : t('courseList.couldNotRefresh'));
     } finally {
       setRefreshing(false);
     }
@@ -84,7 +86,7 @@ export default function Courses() {
         </Pressable>
 
         <Text style={styles.headerTitle}>
-          Courses
+          {t('navigation.courses')}
         </Text>
 
         <Text style={styles.searchIcon}>
@@ -119,7 +121,7 @@ export default function Courses() {
                     styles.activeTabText,
                 ]}
               >
-                {tab}
+                {tab === 'All' ? t('courseList.allCourses') : tab === 'Downloaded' ? t('courseList.downloaded') : t('courseList.availableOffline')}
               </Text>
             </Pressable>
           ))}
@@ -141,15 +143,15 @@ export default function Courses() {
           <View style={styles.bundleContent}>
 
             <Text style={styles.bundleTitle}>
-              Starter Bundle
+              {t('courseList.starterBundle')}
             </Text>
 
             <Text style={styles.bundleSubtitle}>
-              Explore courses without an account
+              {t('courseList.exploreWithoutAccount')}
             </Text>
 
             <Text style={styles.bundleMeta}>
-              {data?.starter.length ?? 0} sample courses • Demo lessons • Demo quizzes • Offline
+              {t('courseList.bundleMetadata', { count: data?.starter.length ?? 0 })}
             </Text>
 
           </View>
@@ -163,11 +165,15 @@ export default function Courses() {
         {/* Course heading */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>
-            {activeTab === 'All' ? 'All Courses' : activeTab}
+            {activeTab === 'All'
+              ? t('courseList.allCourses')
+              : activeTab === 'Downloaded'
+                ? t('courseList.downloaded')
+                : t('courseList.availableOffline')}
           </Text>
 
           <Text style={styles.count}>
-            {courses.length} course{courses.length === 1 ? '' : 's'}
+            {t('courseList.courseCount', { count: courses.length })}
           </Text>
         </View>
 
@@ -179,15 +185,15 @@ export default function Courses() {
 
         {catalogEmpty && (
           <Text style={styles.notice}>
-            Connect to the internet once to see all courses. The Starter Bundle above works offline.
+            {t('courseList.connectToSeeAll')}
           </Text>
         )}
 
         {!catalogEmpty && courses.length === 0 && (
           <Text style={styles.notice}>
             {activeTab === 'Downloaded'
-              ? 'No downloaded courses yet. Open a course and tap Download to learn offline.'
-              : 'Nothing here yet.'}
+              ? t('courseList.noDownloads')
+              : t('courseList.empty')}
           </Text>
         )}
 
@@ -218,8 +224,8 @@ export default function Courses() {
                 </Text>
 
                 <Text style={styles.courseMeta}>
-                  {course.lessonCount} lessons • {formatBytes(size)}
-                  {course.percent > 0 ? ` • ${course.percent}% done` : ''}
+                  {t('courseList.courseMetadata', { count: course.lessonCount, size: formatBytes(size) })}
+                  {course.percent > 0 ? ` • ${t('courseList.percentDone', { percent: course.percent })}` : ''}
                 </Text>
 
               </View>

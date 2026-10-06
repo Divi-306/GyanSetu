@@ -110,10 +110,10 @@ describe('AI tutor via OpenAI-compatible providers', () => {
 });
 
 describe('AI reply language', () => {
-  it('answers Devanagari questions in Hindi and Latin-script questions in English/Hinglish', () => {
-    expect(replyLanguage('Python में list और tuple में क्या अंतर है?')).toMatch(/^Hindi/);
-    expect(replyLanguage('What is a primary key?')).toMatch(/^English/);
-    expect(replyLanguage('list aur tuple mein kya fark hai')).toMatch(/Hinglish/);
+  it('uses the selected app language as the primary preference, even when the question is in another language', () => {
+    expect(replyLanguage('What is a primary key?', 'hi')).toMatch(/^Hindi/);
+    expect(replyLanguage('How can I apply for a scholarship?', 'mr')).toMatch(/^Marathi/);
+    expect(replyLanguage('Python में list और tuple में क्या अंतर है?', 'en')).toMatch(/^English/);
   });
 });
 

@@ -14,5 +14,5 @@ const AskBody = z.object({
 // POST /v1/ai/ask
 aiRouter.post('/ask', requireAuth, aiLimiter, async (req, res) => {
   const body = AskBody.parse(req.body);
-  res.json(await askTutor({ userId: req.user!.id, question: body.question, courseId: body.courseId }));
+  res.json(await askTutor({ userId: req.user!.id, question: body.question, courseId: body.courseId, appLanguage: req.language }));
 });

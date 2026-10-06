@@ -14,7 +14,7 @@ export type UserRow = {
   email: string | null;
   phone: string | null;
   role: 'student' | 'admin';
-  preferred_language: 'en' | 'hi';
+  preferred_language: 'en' | 'hi' | 'mr' | 'bn' | 'ta' | 'te' | 'gu';
   password_hash: string | null;
   google_sub: string | null;
   created_at: Date;

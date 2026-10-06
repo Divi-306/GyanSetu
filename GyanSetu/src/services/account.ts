@@ -1,18 +1,25 @@
 import { db, kvDelete, kvGet, kvSet } from '@/db';
 import { api, ApiError, clearSession, getRefreshToken, hasSession, NetworkError, saveSession } from '@/lib/api';
 import { getDeviceId } from '@/lib/device';
-import { useApp, type User } from '@/stores/appStore';
+import { loadPreferredLanguage } from '@/i18n';
+import { useApp, type SupportedLanguage, type User } from '@/stores/appStore';
 import { clearStudentData } from './learning';
 import { resetSyncCursor, syncNow } from './sync';
 
 type AuthResponse = { user: User; accessToken: string; refreshToken: string };
 
 const USER_KEY = 'session.user';
+const PENDING_LANGUAGE_KEY = 'session.pending-language-sync';
 
 async function startSession(res: AuthResponse) {
   await saveSession(res);
   await kvSet(USER_KEY, res.user);
   useApp.getState().setSession(res.user);
+  await loadPreferredLanguage();
+  if (res.user.preferredLanguage !== useApp.getState().language) {
+    await kvSet(PENDING_LANGUAGE_KEY, true);
+    void syncPendingLanguagePreference();
+  }
   // Guest progress queued before login is sent under the new account, then server data is pulled in.
   void syncNow();
 }
@@ -26,7 +33,7 @@ export async function login(identifier: string, password: string) {
   await startSession(res);
 }
 
-export async function signup(input: { name: string; email?: string; phone?: string; password: string; preferredLanguage?: 'en' | 'hi' }) {
+export async function signup(input: { name: string; email?: string; phone?: string; password: string; preferredLanguage?: SupportedLanguage }) {
   const res = await api<AuthResponse>('/v1/auth/signup', {
     method: 'POST',
     auth: false,
@@ -54,10 +61,13 @@ export async function restoreSession() {
   }
   const cached = await kvGet<User>(USER_KEY);
   useApp.getState().setSession(cached);
+  await loadPreferredLanguage();
   try {
     const { user } = await api<{ user: User }>('/v1/me');
     await kvSet(USER_KEY, user);
     useApp.getState().setSession(user);
+    await loadPreferredLanguage();
+    void syncPendingLanguagePreference();
   } catch (err) {
     // 401 after a failed refresh means the session is over; offline content stays usable.
     if (err instanceof ApiError && err.status === 401) await endSessionLocally();
@@ -139,10 +149,42 @@ export async function saveProfile(profile: Profile) {
   return saved;
 }
 
-export async function updateUser(patch: { name?: string; preferredLanguage?: 'en' | 'hi' }) {
+export async function updateUser(patch: { name?: string; preferredLanguage?: SupportedLanguage }) {
+  if (patch.preferredLanguage) {
+    const current = useApp.getState().user;
+    if (current) {
+      const localUser = { ...current, preferredLanguage: patch.preferredLanguage };
+      await kvSet(USER_KEY, localUser);
+      useApp.getState().setSession(localUser);
+    }
+    useApp.getState().setLanguage(patch.preferredLanguage);
+    await kvSet(PENDING_LANGUAGE_KEY, true);
+  }
+
   const { user } = await api<{ user: User }>('/v1/me', { method: 'PATCH', body: patch });
   await kvSet(USER_KEY, user);
   useApp.getState().setSession(user);
+  if (user.preferredLanguage) useApp.getState().setLanguage(user.preferredLanguage);
+  if (patch.preferredLanguage) await kvDelete(PENDING_LANGUAGE_KEY);
+}
+
+export async function syncPendingLanguagePreference() {
+  if (!(await kvGet<boolean>(PENDING_LANGUAGE_KEY))) return;
+  const { language, sessionStatus, user } = useApp.getState();
+  if (sessionStatus !== 'authed' || !user) return;
+
+  try {
+    const { user: updated } = await api<{ user: User }>('/v1/me', {
+      method: 'PATCH',
+      body: { preferredLanguage: language },
+    });
+    await kvSet(USER_KEY, updated);
+    await kvDelete(PENDING_LANGUAGE_KEY);
+    useApp.getState().setSession(updated);
+    useApp.getState().setLanguage(language);
+  } catch (err) {
+    if (!(err instanceof NetworkError)) console.warn('[language] preference sync failed', err);
+  }
 }
 
 // ─────────────────────────── Scholarships ───────────────────────────

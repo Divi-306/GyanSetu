@@ -5,6 +5,7 @@ import pinoHttp from 'pino-http';
 import { env } from './config/env';
 import { logger } from './lib/logger';
 import { pool } from './db/pool';
+import { resolveRequestLanguage } from './middleware/language';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 // Module routers
 import { authRouter } from './modules/auth/auth.routes';
@@ -31,6 +32,7 @@ export function createApp() {
     env.CORS_ORIGINS === '*' ? env.NODE_ENV !== 'production' : env.CORS_ORIGINS.split(',').map((o) => o.trim());
   app.use(cors({ origin: corsOrigin }));
   app.use(express.json({ limit: '1mb' }));
+  app.use(resolveRequestLanguage);
   if (env.NODE_ENV !== 'test') app.use(pinoHttp({ logger }));
 
   // Liveness: process is up. The app uses this as its "server reachable" probe.

@@ -7,11 +7,13 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useTranslation } from '@/i18n';
 import { selectOnline, useApp } from '@/stores/appStore';
 
 export default function Home() {
   // "Online" means the GyanSetu server answered, not just that Wi-Fi is on.
   const isOnline = useApp(selectOnline);
+  const { t } = useTranslation();
   const onLogin = () => router.push('/login');
   const onSignUp = () => router.push('/signup');
   const onContinueOffline = () => router.replace('/dashboard');
@@ -39,11 +41,7 @@ export default function Home() {
         </Text>
 
         <Text style={styles.tagline}>
-          Learning continues,
-        </Text>
-
-        <Text style={styles.tagline}>
-          even when connectivity doesn’t.
+          {t('auth.offlinePrompt')}
         </Text>
       </View>
 
@@ -69,21 +67,19 @@ export default function Home() {
 
         <Text style={styles.statusText}>
           {isOnline
-            ? 'You are online'
-            : 'You are offline'}
+            ? t('auth.accountNotice')
+            : t('auth.offlineNotice')}
         </Text>
       </View>
 
       {/* Welcome */}
       <View style={styles.welcomeSection}>
         <Text style={styles.welcomeTitle}>
-          Welcome to GyanSetu
+          {t('auth.welcome')}
         </Text>
 
         <Text style={styles.description}>
-          Explore learning without an account,
-          or sign in to continue your personalized
-          learning journey.
+          {t('auth.welcomeDescription')}
         </Text>
       </View>
 
@@ -100,12 +96,11 @@ export default function Home() {
 
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle}>
-            Continue Offline
+            {t('auth.continueOffline')}
           </Text>
 
           <Text style={styles.cardDescription}>
-            Explore courses, lessons and demo
-            quizzes without an account.
+            {t('auth.continueOfflineDescription')}
           </Text>
         </View>
 
@@ -119,7 +114,7 @@ export default function Home() {
         <View style={styles.divider} />
 
         <Text style={styles.orText}>
-          OR
+          {t('auth.or')}
         </Text>
 
         <View style={styles.divider} />
@@ -131,7 +126,7 @@ export default function Home() {
         onPress={onLogin}
       >
         <Text style={styles.loginText}>
-          Login
+          {t('auth.loginAction')}
         </Text>
 
         <Text style={styles.loginArrow}>
@@ -145,12 +140,12 @@ export default function Home() {
         onPress={onSignUp}
       >
         <Text style={styles.signupText}>
-          Create an Account
+          {t('common.createAccount')}
         </Text>
       </Pressable>
 
       <Text style={styles.footer}>
-        Your learning. Your pace. Your continuity.
+        {t('auth.yourLearning')}
       </Text>
 
       <View style={styles.bottomDecoration}>

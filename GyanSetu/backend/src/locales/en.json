@@ -1,0 +1,19 @@
+{
+  "auth": {
+    "invalidCredentials": "Incorrect email/phone or password",
+    "accountExists": "An account with this email or phone already exists",
+    "resetPassword": "Password updated. Please log in again.",
+    "resetLinkInvalid": "This reset link is invalid or has expired"
+  },
+  "errors": {
+    "authenticationRequired": "Authentication required",
+    "validation": "Invalid request",
+    "notFound": "Resource not found",
+    "generic": "Something went wrong. Please try again.",
+    "aiUnavailable": "The AI tutor is unavailable right now"
+  },
+  "ai": {
+    "fallback": "I can't help with that question. Please ask something about your course topics.",
+    "notConfigured": "Online AI is not available right now"
+  }
+}

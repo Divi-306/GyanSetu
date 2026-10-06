@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useTranslation } from '@/i18n';
 import { db } from '@/db';
 import { useLocalData } from '@/hooks/useLocalData';
 import { usePublishScreen } from '@/navigator/store';
@@ -21,6 +22,7 @@ async function loadStarter() {
 }
 
 export default function StarterBundle() {
+  const { t } = useTranslation();
   const { data } = useLocalData(loadStarter);
   const starterCourses = useMemo(() => data ?? [], [data]);
   const screenItems = useMemo(() => starterCourses.map((c) => ({ title: c.title, href: `/course/${c.id}` as const })), [starterCourses]);
@@ -45,11 +47,11 @@ export default function StarterBundle() {
 
         <View>
           <Text style={styles.title}>
-            Starter Bundle
+            {t('courseList.starterBundle')}
           </Text>
 
           <Text style={styles.subtitle}>
-            Explore courses without an account
+            {t('courseList.exploreWithoutAccount')}
           </Text>
         </View>
 
@@ -72,12 +74,11 @@ export default function StarterBundle() {
           <View style={styles.introContent}>
 
             <Text style={styles.introTitle}>
-              Welcome to the Starter Bundle
+              {t('starter.welcome')}
             </Text>
 
             <Text style={styles.introText}>
-              Explore sample lessons and demo quizzes
-              from different subjects — no login required.
+              {t('starter.description')}
             </Text>
 
           </View>
@@ -89,7 +90,7 @@ export default function StarterBundle() {
           <View style={styles.dot} />
 
           <Text style={styles.offlineText}>
-            Starter content available offline
+            {t('starter.availableOffline')}
           </Text>
         </View>
 
@@ -98,16 +99,16 @@ export default function StarterBundle() {
 
           <View>
             <Text style={styles.sectionTitle}>
-              Explore Courses
+              {t('starter.exploreCourses')}
             </Text>
 
             <Text style={styles.sectionSubtitle}>
-              Choose a subject to start learning
+              {t('starter.chooseSubject')}
             </Text>
           </View>
 
           <Text style={styles.count}>
-            {starterCourses.length} courses
+            {t('starter.courseCount', { count: starterCourses.length })}
           </Text>
 
         </View>
@@ -139,7 +140,7 @@ export default function StarterBundle() {
               <View style={styles.metaRow}>
 
                 <Text style={styles.metaText}>
-                  {course.sampleLessons} demo lesson{course.sampleLessons === 1 ? '' : 's'}
+                  {t('starter.demoLessonCount', { count: course.sampleLessons })}
                 </Text>
 
                 {course.hasQuiz && (
@@ -149,7 +150,7 @@ export default function StarterBundle() {
                     </Text>
 
                     <Text style={styles.metaText}>
-                      Demo quiz
+                      {t('starter.demoQuiz')}
                     </Text>
                   </>
                 )}

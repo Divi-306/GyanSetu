@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { useTranslation } from '@/i18n';
 import { db } from '@/db';
 import { useLocalData } from '@/hooks/useLocalData';
 import { usePublishScreen } from '@/navigator/store';
@@ -18,6 +19,7 @@ async function loadQuizzes() {
 
 /** Every quiz available on this phone (Starter Bundle demos + downloaded courses). */
 export default function Quizzes() {
+  const { t } = useTranslation();
   const { data: quizzes } = useLocalData(loadQuizzes);
   const screenItems = useMemo(() => (quizzes ?? []).map((q) => ({ title: q.title, href: `/quiz/${q.id}` as const })), [quizzes]);
   usePublishScreen(screenItems);
@@ -29,14 +31,14 @@ export default function Quizzes() {
           <Text style={styles.backText}>‹</Text>
         </Pressable>
         <View>
-          <Text style={styles.headerTitle}>Take Quiz</Text>
-          <Text style={styles.headerSubtitle}>Practice offline</Text>
+          <Text style={styles.headerTitle}>{t('quiz.title')}</Text>
+          <Text style={styles.headerSubtitle}>{t('quiz.practiceOffline')}</Text>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {quizzes?.length === 0 && (
-          <Text style={styles.empty}>No quizzes on this phone yet. Download a course to get its quizzes.</Text>
+          <Text style={styles.empty}>{t('quiz.empty')}</Text>
         )}
         {quizzes?.map((q) => (
           <Pressable key={q.id} style={styles.card} onPress={() => router.push(`/quiz/${q.id}`)}>
@@ -46,8 +48,8 @@ export default function Quizzes() {
             <View style={styles.cardBody}>
               <Text style={styles.cardTitle}>{q.title}</Text>
               <Text style={styles.cardMeta}>
-                {q.courseTitle} • {q.questionCount} questions
-                {q.best ? ` • Best ${q.best.best}/${q.best.total}` : ''}
+                {q.courseTitle} • {t('quiz.questionCount', { count: q.questionCount })}
+                {q.best ? ` • ${t('quiz.bestScore', { score: q.best.best, total: q.best.total })}` : ''}
               </Text>
             </View>
             <Text style={styles.arrow}>›</Text>

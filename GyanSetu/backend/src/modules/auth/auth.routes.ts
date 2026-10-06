@@ -34,7 +34,7 @@ const SignupBody = z
     email: z.email().optional(),
     phone: z.string().optional(),
     password: Password,
-    preferredLanguage: z.enum(['en', 'hi']).default('en'),
+    preferredLanguage: z.enum(['en', 'hi', 'mr', 'bn', 'ta', 'te', 'gu']).default('en'),
     deviceId: DeviceId,
   })
   .refine((b) => b.email || b.phone, { message: 'Email or phone is required', path: ['email'] });

@@ -1,15 +1,17 @@
 import NetInfo from '@react-native-community/netinfo';
 import { AppState } from 'react-native';
 import { migrate } from '@/db';
+import { loadPreferredLanguage } from '@/i18n';
 import { NetworkError, pingServer } from '@/lib/api';
 import { useApp } from '@/stores/appStore';
-import { restoreSession } from './account';
+import { restoreSession, syncPendingLanguagePreference } from './account';
 import { importBundledStarter, refreshCatalog, refreshStarterPack } from './packs';
 import { flush, loadSyncState, syncNow } from './sync';
 
 /** Everything the first screen needs, all local: works with no internet on first launch. */
 export async function initApp() {
   await migrate();
+  await loadPreferredLanguage();
   await importBundledStarter();
   await loadSyncState();
   // Restores from the cached user immediately; refreshes from the server in the background.
@@ -28,7 +30,12 @@ async function onPossiblyOnline() {
     p.catch((err) => {
       if (!(err instanceof NetworkError)) console.warn('[bootstrap]', err);
     });
-  await Promise.all([background(syncNow()), background(refreshCatalog()), background(refreshStarterPack())]);
+  await Promise.all([
+    background(syncNow()),
+    background(refreshCatalog()),
+    background(refreshStarterPack()),
+    background(syncPendingLanguagePreference()),
+  ]);
 }
 
 /** Starts connectivity tracking. Returns a cleanup function. */

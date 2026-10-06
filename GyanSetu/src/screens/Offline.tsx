@@ -7,12 +7,14 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useTranslation } from '@/i18n';
 import { useLocalData } from '@/hooks/useLocalData';
 import { goBackOr } from '@/lib/nav';
 import { getContinueLearning } from '@/services/learning';
 import { selectOnline, useApp } from '@/stores/appStore';
 
 export default function Offline() {
+  const { t } = useTranslation();
   const online = useApp(selectOnline);
   const { data: resume } = useLocalData(getContinueLearning);
   const onBack = () => goBackOr('/dashboard');
@@ -31,18 +33,18 @@ export default function Offline() {
 
         <View>
           <Text style={styles.headerTitle}>
-            Offline Learning
+            {t('offline.title')}
           </Text>
 
           <Text style={styles.headerSubtitle}>
-            Your learning continues
+            {t('offline.subtitle')}
           </Text>
         </View>
 
         <View style={styles.offlineBadge}>
           <View style={styles.offlineDot} />
           <Text style={styles.offlineText}>
-            {online ? 'Online' : 'Offline'}
+            {online ? t('common.online') : t('common.offline')}
           </Text>
         </View>
       </View>
@@ -62,12 +64,11 @@ export default function Offline() {
 
           <View style={styles.welcomeContent}>
             <Text style={styles.welcomeTitle}>
-              Starter Learning Pack
+              {t('offline.starterPack')}
             </Text>
 
             <Text style={styles.welcomeDescription}>
-              Your downloaded learning material is
-              available even without internet.
+              {t('offline.downloadedMaterial')}
             </Text>
           </View>
         </View>
@@ -78,17 +79,17 @@ export default function Offline() {
           <View style={styles.packHeader}>
             <View>
               <Text style={styles.packTitle}>
-                {resume?.title ?? 'Starter Bundle'}
+                {resume?.title ?? t('courseList.starterBundle')}
               </Text>
 
               <Text style={styles.packSubtitle}>
-                {resume ? 'Your current course' : 'Sample lessons from 5 subjects'}
+                {resume ? t('offline.currentCourse') : t('offline.sampleSubjectCount')}
               </Text>
             </View>
 
             <View style={styles.activeBadge}>
               <Text style={styles.activeText}>
-                Available Offline
+                {t('offline.availableOffline')}
               </Text>
             </View>
           </View>
@@ -96,7 +97,7 @@ export default function Offline() {
           <View style={styles.progressSection}>
             <View style={styles.progressInfo}>
               <Text style={styles.progressLabel}>
-                Learning progress
+                {t('offline.learningProgress')}
               </Text>
 
               <Text style={styles.progressValue}>
@@ -110,13 +111,13 @@ export default function Offline() {
           </View>
 
           <Text style={styles.packInfo}>
-            Lessons • Quizzes • Offline AI
+            {t('offline.lessonQuizAi')}
           </Text>
         </View>
 
         {/* Continue Learning */}
         <Text style={styles.sectionTitle}>
-          Continue Learning
+          {t('navigation.continueLearning')}
         </Text>
 
         <Pressable
@@ -136,11 +137,11 @@ export default function Offline() {
 
           <View style={styles.lessonContent}>
             <Text style={styles.lessonTitle}>
-              {resume?.lastLessonTitle ?? (resume ? resume.title : 'Open the Starter Bundle')}
+              {resume?.lastLessonTitle ?? (resume ? resume.title : t('offline.openStarter'))}
             </Text>
 
             <Text style={styles.lessonSubtitle}>
-              Available offline
+              {t('offline.availableOffline')}
             </Text>
           </View>
 
@@ -152,7 +153,7 @@ export default function Offline() {
 
         {/* Available Offline */}
         <Text style={styles.sectionTitle}>
-          Available Offline
+          {t('offline.availableOffline')}
         </Text>
 
         <View style={styles.featureGrid}>
@@ -165,11 +166,11 @@ export default function Offline() {
             </View>
 
             <Text style={styles.featureTitle}>
-              Lessons
+              {t('offline.lessons')}
             </Text>
 
             <Text style={styles.featureSubtitle}>
-              Read downloaded lessons
+              {t('offline.readLessons')}
             </Text>
           </Pressable>
 
@@ -181,11 +182,11 @@ export default function Offline() {
             </View>
 
             <Text style={styles.featureTitle}>
-              Quiz
+              {t('quiz.title')}
             </Text>
 
             <Text style={styles.featureSubtitle}>
-              Practice without internet
+              {t('offline.practiceNoInternet')}
             </Text>
           </Pressable>
 
@@ -197,11 +198,11 @@ export default function Offline() {
             </View>
 
             <Text style={styles.featureTitle}>
-              Offline AI
+              {t('ai.offlineAssistant')}
             </Text>
 
             <Text style={styles.featureSubtitle}>
-              Ask about downloaded content
+              {t('offline.askDownloaded')}
             </Text>
           </Pressable>
 
@@ -213,11 +214,11 @@ export default function Offline() {
             </View>
 
             <Text style={styles.featureTitle}>
-              My Progress
+              {t('offline.myProgress')}
             </Text>
 
             <Text style={styles.featureSubtitle}>
-              Track your local progress
+              {t('offline.trackProgress')}
             </Text>
           </Pressable>
 
@@ -231,12 +232,11 @@ export default function Offline() {
 
           <View style={styles.noticeContent}>
             <Text style={styles.noticeTitle}>
-              You’re learning offline
+              {t('offline.learningOffline')}
             </Text>
 
             <Text style={styles.noticeText}>
-              Your progress will be saved on this device
-              and can be synchronized when you reconnect.
+              {t('offline.progressWillSync')}
             </Text>
           </View>
         </View>

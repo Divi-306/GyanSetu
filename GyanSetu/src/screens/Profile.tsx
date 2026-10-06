@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import {
   Alert,
+  Modal,
+  Pressable,
   View,
   Text,
   StyleSheet,
@@ -11,13 +13,14 @@ import { Paths } from 'expo-file-system';
 import { router } from 'expo-router';
 import { db } from '@/db';
 import { useLocalData } from '@/hooks/useLocalData';
-import { errorMessage } from '@/lib/api';
+import { LANGUAGE_LABELS, persistPreferredLanguage, useTranslation } from '@/i18n';
+import { errorMessage, NetworkError } from '@/lib/api';
 import { formatBytes, timeAgo } from '@/lib/format';
 import { goBackOr } from '@/lib/nav';
 import { deleteAccount, logout, pendingChanges, updateUser } from '@/services/account';
 import { getLearningStats } from '@/services/learning';
 import { syncNow } from '@/services/sync';
-import { selectOnline, useApp } from '@/stores/appStore';
+import { selectOnline, useApp, type SupportedLanguage } from '@/stores/appStore';
 
 async function loadProfileData() {
   const stats = await getLearningStats();
@@ -31,34 +34,46 @@ export default function Profile() {
   const user = useApp((s) => s.user);
   const authed = useApp((s) => s.sessionStatus === 'authed');
   const online = useApp(selectOnline);
+  const { language, t } = useTranslation();
   const { syncing, pendingSyncCount, lastSyncAt } = useApp();
   const { data } = useLocalData(loadProfileData);
   const [busy, setBusy] = useState(false);
+  const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
 
   const stats = data?.stats;
 
   const syncLabel = syncing
-    ? '● Syncing…'
+    ? t('profile.syncing')
     : pendingSyncCount > 0
-      ? `● ${pendingSyncCount} change${pendingSyncCount === 1 ? '' : 's'} waiting to sync`
+      ? t('profile.changesPending', {
+          count: pendingSyncCount,
+          plural: pendingSyncCount === 1 ? '' : 's',
+        })
       : authed
-        ? '● All changes synced'
-        : '● All changes saved locally';
+        ? t('profile.allChangesSynced')
+        : t('profile.allChangesSaved');
 
   const syncHint = !authed
-    ? 'Log in to back up your progress and continue on another phone.'
+    ? t('profile.logInToBackUp')
     : lastSyncAt
-      ? `Last synced ${timeAgo(lastSyncAt)}.${online ? '' : ' Will sync when you are online.'}`
-      : 'Your progress will sync when internet connection is available.';
+      ? t('profile.lastSynced', {
+          time: timeAgo(lastSyncAt),
+          suffix: online ? '' : ` ${t('profile.syncReminder')}`,
+        })
+      : t('profile.syncReminder');
 
-  const toggleLanguage = async () => {
-    if (!authed || !user) return;
+  const changeLanguage = async (nextLanguage: SupportedLanguage) => {
     try {
-      await updateUser({ preferredLanguage: user.preferredLanguage === 'hi' ? 'en' : 'hi' });
+      await persistPreferredLanguage(nextLanguage);
+      if (authed) await updateUser({ preferredLanguage: nextLanguage });
     } catch (err) {
-      Alert.alert('Could not change language', errorMessage(err));
+      if (!(err instanceof NetworkError)) {
+        Alert.alert(t('errors.couldNotChangeLanguage'), errorMessage(err));
+      }
     }
   };
+
+  const openLanguagePicker = () => setLanguagePickerOpen(true);
 
   const doLogout = async () => {
     setBusy(true);
@@ -74,30 +89,33 @@ export default function Profile() {
     const pending = await pendingChanges();
     if (pending === 0) return doLogout();
     Alert.alert(
-      'Unsynced progress',
-      `${pending} change${pending === 1 ? ' has' : 's have'} not been saved to your account yet. Logging out now will remove ${pending === 1 ? 'it' : 'them'} from this phone. Connect to the internet first to keep ${pending === 1 ? 'it' : 'them'}.`,
+      t('profile.unsyncedProgress'),
+      t('profile.logoutPrompt', {
+        count: pending,
+        plural: pending === 1 ? '' : 's',
+      }),
       [
-        { text: 'Stay logged in', style: 'cancel' },
-        { text: 'Log out anyway', style: 'destructive', onPress: () => void doLogout() },
+        { text: t('profile.stayLoggedIn'), style: 'cancel' },
+        { text: t('profile.logoutAnyway'), style: 'destructive', onPress: () => void doLogout() },
       ],
     );
   };
 
   const confirmDelete = () =>
     Alert.alert(
-      'Delete account?',
-      'This permanently deletes your account, profile and all your progress from GyanSetu. This cannot be undone.',
+      t('profile.deleteAccount'),
+      t('profile.deleteAccountPrompt'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('profile.cancel'), style: 'cancel' },
         {
-          text: 'Delete',
+          text: t('profile.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
               await deleteAccount();
               router.replace('/');
             } catch (err) {
-              Alert.alert('Could not delete account', errorMessage(err));
+              Alert.alert(t('errors.unableToDeleteAccount'), errorMessage(err));
             }
           },
         },
@@ -123,7 +141,7 @@ export default function Profile() {
           </TouchableOpacity>
 
           <Text style={styles.headerTitle}>
-            Profile
+            {t('profile.title')}
           </Text>
 
           <View style={{ width: 42 }} />
@@ -139,11 +157,11 @@ export default function Profile() {
 
           <View style={styles.profileInfo}>
             <Text style={styles.name}>
-              {user?.name || 'Student'}
+              {user?.name || t('profile.student')}
             </Text>
 
             <Text style={styles.email}>
-              {user ? user.email ?? user.phone : 'Offline learner'}
+              {user ? user.email ?? user.phone : t('profile.offlineLearner')}
             </Text>
           </View>
 
@@ -152,14 +170,14 @@ export default function Profile() {
             onPress={() => router.push(authed ? '/profile/edit' : '/login')}
           >
             <Text style={styles.editText}>
-              {authed ? 'Edit' : 'Log in'}
+              {authed ? t('profile.edit') : t('profile.login')}
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Learning Overview */}
         <Text style={styles.sectionTitle}>
-          Learning Overview
+          {t('profile.learningOverview')}
         </Text>
 
         <View style={styles.statsRow}>
@@ -169,7 +187,7 @@ export default function Profile() {
             </Text>
 
             <Text style={styles.statLabel}>
-              Courses
+              {t('profile.courses')}
             </Text>
           </View>
 
@@ -179,7 +197,7 @@ export default function Profile() {
             </Text>
 
             <Text style={styles.statLabel}>
-              Lessons done
+              {t('profile.lessonsDone')}
             </Text>
           </View>
 
@@ -189,14 +207,14 @@ export default function Profile() {
             </Text>
 
             <Text style={styles.statLabel}>
-              Progress
+              {t('profile.progress')}
             </Text>
           </View>
         </View>
 
         {/* Offline Learning */}
         <Text style={styles.sectionTitle}>
-          Offline Learning
+          {t('profile.offlineLearning')}
         </Text>
 
         <TouchableOpacity style={styles.infoCard} onPress={() => router.push('/courses')}>
@@ -206,13 +224,13 @@ export default function Profile() {
 
           <View style={styles.infoContent}>
             <Text style={styles.infoTitle}>
-              Downloaded Learning Packs
+              {t('profile.downloadedLearningPacks')}
             </Text>
 
             <Text style={styles.infoSubtitle}>
               {data?.packCount
-                ? `${data.packCount} course${data.packCount === 1 ? '' : 's'} • ${formatBytes(data.packBytes)}`
-                : 'Starter Bundle only. Download courses to learn offline.'}
+                ? `${data.packCount} ${t('profile.courses')} • ${formatBytes(data.packBytes)}`
+                : t('profile.starterBundleOnly')}
             </Text>
           </View>
 
@@ -228,18 +246,21 @@ export default function Profile() {
 
           <View style={styles.infoContent}>
             <Text style={styles.infoTitle}>
-              Device Storage
+              {t('profile.deviceStorage')}
             </Text>
 
             <Text style={styles.infoSubtitle}>
-              GyanSetu uses {formatBytes(data?.packBytes ?? 0)} • {formatBytes(data?.freeBytes)} free
+              {t('profile.storageSummary', {
+                used: formatBytes(data?.packBytes ?? 0),
+                free: formatBytes(data?.freeBytes),
+              })}
             </Text>
           </View>
         </View>
 
         {/* Sync */}
         <Text style={styles.sectionTitle}>
-          Sync & Connectivity
+          {t('profile.syncAndConnectivity')}
         </Text>
 
         <TouchableOpacity
@@ -253,7 +274,7 @@ export default function Profile() {
 
           <View style={styles.infoContent}>
             <Text style={styles.infoTitle}>
-              Sync Status{authed && online && !syncing ? ' • Tap to sync now' : ''}
+              {authed && online && !syncing ? t('profile.tapToSync') : t('profile.syncStatus')}
             </Text>
 
             <Text style={styles.syncStatus}>
@@ -268,35 +289,33 @@ export default function Profile() {
 
         {/* Preferences */}
         <Text style={styles.sectionTitle}>
-          Preferences
+          {t('profile.preferences')}
         </Text>
 
-        <TouchableOpacity style={styles.infoCard} disabled={!authed} onPress={toggleLanguage}>
+        <TouchableOpacity style={styles.infoCard} onPress={openLanguagePicker}>
           <View style={styles.infoIcon}>
             <Text>🌐</Text>
           </View>
 
           <View style={styles.infoContent}>
             <Text style={styles.infoTitle}>
-              Language
+              {t('common.language')}
             </Text>
 
             <Text style={styles.infoSubtitle}>
-              {user?.preferredLanguage === 'hi' ? 'हिन्दी (Hindi)' : 'English'}
-              {authed ? ' • Tap to switch' : ''}
+              {LANGUAGE_LABELS[language]}
+              {authed ? ` • ${t('profile.tapToSwitch')}` : ''}
             </Text>
           </View>
 
-          {authed && (
-            <Text style={styles.arrow}>
-              ›
-            </Text>
-          )}
+          <Text style={styles.arrow}>
+            ›
+          </Text>
         </TouchableOpacity>
 
         {/* Account */}
         <Text style={styles.sectionTitle}>
-          Account
+          {t('profile.account')}
         </Text>
 
         {authed ? (
@@ -307,12 +326,12 @@ export default function Profile() {
               disabled={busy}
             >
               <Text style={styles.logoutText}>
-                {busy ? 'Logging out…' : 'Log Out'}
+                {busy ? t('profile.loggingOut') : t('common.logout')}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.deleteButton} onPress={confirmDelete}>
-              <Text style={styles.deleteText}>Delete account</Text>
+              <Text style={styles.deleteText}>{t('profile.deleteAccount')}</Text>
             </TouchableOpacity>
           </>
         ) : (
@@ -321,7 +340,7 @@ export default function Profile() {
             onPress={() => router.push('/login')}
           >
             <Text style={styles.loginText}>
-              Log in or create an account
+              {t('profile.login')} / {t('common.createAccount')}
             </Text>
           </TouchableOpacity>
         )}
@@ -331,6 +350,60 @@ export default function Profile() {
         </Text>
 
       </ScrollView>
+
+      <Modal
+        visible={languagePickerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setLanguagePickerOpen(false)}
+      >
+        <View style={styles.languageModalRoot}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('common.close')}
+            style={styles.languageBackdrop}
+            onPress={() => setLanguagePickerOpen(false)}
+          />
+          <View style={styles.languageSheet}>
+            <View style={styles.languageSheetHeader}>
+              <View style={styles.languageSheetHeading}>
+                <Text style={styles.languageSheetTitle}>{t('profile.appLanguage')}</Text>
+                <Text style={styles.languageSheetDescription}>{t('profile.languageDescription')}</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setLanguagePickerOpen(false)}
+                hitSlop={10}
+              >
+                <Text style={styles.languageClose}>{t('common.close')}</Text>
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {Object.entries(LANGUAGE_LABELS).map(([code, label]) => {
+                const selected = code === language;
+                return (
+                  <Pressable
+                    key={code}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                    style={[styles.languageOption, selected && styles.languageOptionSelected]}
+                    onPress={() => {
+                      setLanguagePickerOpen(false);
+                      void changeLanguage(code as SupportedLanguage);
+                    }}
+                  >
+                    <Text style={[styles.languageOptionText, selected && styles.languageOptionTextSelected]}>
+                      {label}
+                    </Text>
+                    <Text style={styles.languageOptionCode}>{code.toUpperCase()}</Text>
+                    {selected && <Text style={styles.languageCheck}>✓</Text>}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -577,5 +650,95 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#A0A7A1',
     marginTop: 22,
+  },
+
+  languageModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+
+  languageBackdrop: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(20, 33, 26, 0.48)',
+  },
+
+  languageSheet: {
+    maxHeight: '82%',
+    backgroundColor: '#FFFDF8',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 28,
+  },
+
+  languageSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+
+  languageSheetHeading: {
+    flex: 1,
+    paddingRight: 16,
+  },
+
+  languageSheetTitle: {
+    color: '#20352A',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 5,
+  },
+
+  languageSheetDescription: {
+    color: '#718078',
+    fontSize: 13,
+    lineHeight: 19,
+  },
+
+  languageClose: {
+    color: '#315C43',
+    fontSize: 14,
+    fontWeight: '600',
+    paddingVertical: 4,
+  },
+
+  languageOption: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E8EDE4',
+    paddingHorizontal: 12,
+  },
+
+  languageOptionSelected: {
+    backgroundColor: '#F0F5EC',
+  },
+
+  languageOptionText: {
+    flex: 1,
+    color: '#283B30',
+    fontSize: 16,
+  },
+
+  languageOptionTextSelected: {
+    color: '#315C43',
+    fontWeight: '700',
+  },
+
+  languageOptionCode: {
+    color: '#7A847D',
+    fontSize: 11,
+    marginRight: 12,
+  },
+
+  languageCheck: {
+    color: '#315C43',
+    fontSize: 17,
+    fontWeight: '700',
+    width: 18,
+    textAlign: 'center',
   },
 });

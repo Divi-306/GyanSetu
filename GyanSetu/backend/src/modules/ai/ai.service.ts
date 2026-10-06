@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { pool } from '../../db/pool';
 import { HttpError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
+import { normalizeLanguage } from '../../lib/i18n';
 import { aiConfigured, complete } from './providers';
 import { retrieveChunks } from './retrieval';
 
@@ -37,17 +38,28 @@ const ANSWER_JSON_SCHEMA = {
 const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 /**
- * Which language to answer in, decided from the question's script rather than
- * left to the model: fast models tended to answer English questions in Hindi.
+ * The selected app language wins over the question's script so the user always
+ * receives the same language in their GyanSetu experience.
  */
-export function replyLanguage(question: string): string {
+export function replyLanguage(question: string, appLanguage?: string): string {
+  const language = normalizeLanguage(appLanguage);
+  const map = {
+    en: 'English. Use simple, clear explanations and keep examples easy to follow.',
+    hi: 'Hindi. Explain clearly in simple Hindi with steps and a tiny example when useful.',
+    mr: 'Marathi. Explain clearly in simple Marathi with steps and a tiny example when useful.',
+    bn: 'Bangla. Explain clearly in simple Bangla with steps and a tiny example when useful.',
+    ta: 'Tamil. Explain clearly in simple Tamil with steps and a tiny example when useful.',
+    te: 'Telugu. Explain clearly in simple Telugu with steps and a tiny example when useful.',
+    gu: 'Gujarati. Explain clearly in simple Gujarati with steps and a tiny example when useful.',
+  } as const;
+  if (language in map) return map[language];
   if (/\p{Script=Devanagari}/u.test(question)) return 'Hindi (Devanagari script)';
   return 'English. If the question itself is Hinglish (Hindi words written in Latin letters), reply in Hinglish';
 }
 
-export type AskInput = { userId: string; question: string; courseId?: string };
+export type AskInput = { userId: string; question: string; courseId?: string; appLanguage?: string };
 
-export async function askTutor({ userId, question, courseId }: AskInput) {
+export async function askTutor({ userId, question, courseId, appLanguage }: AskInput) {
   if (!aiConfigured()) throw new HttpError(503, 'AI_NOT_CONFIGURED', 'Online AI is not available right now');
 
   const chunks = await retrieveChunks(question, courseId);
@@ -57,7 +69,7 @@ export async function askTutor({ userId, question, courseId }: AskInput) {
   const userContent =
     `<sources>\n${sourcesXml || '(no matching course material found)'}\n</sources>\n\n` +
     `<question>\n${question}\n</question>\n\n` +
-    `<reply_language>${replyLanguage(question)}</reply_language>`;
+    `<reply_language>${replyLanguage(question, appLanguage)}</reply_language>`;
 
   const result = await complete({ system: SYSTEM_PROMPT, user: userContent, schema: ANSWER_JSON_SCHEMA });
 

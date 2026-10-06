@@ -14,6 +14,7 @@ import { router } from 'expo-router';
 import { errorMessage } from '@/lib/api';
 import { goBackOr } from '@/lib/nav';
 import { login, signup } from '@/services/account';
+import { useTranslation } from '@/i18n';
 import { useApp } from '@/stores/appStore';
 
 type LoginProps = {
@@ -22,6 +23,7 @@ type LoginProps = {
 
 export default function Login({ mode = 'login' }: LoginProps) {
   const [isSignUp, setIsSignUp] = useState(mode === 'signup');
+  const { t } = useTranslation();
   const pendingSyncCount = useApp((s) => s.pendingSyncCount);
 
   const [name, setName] = useState('');
@@ -37,15 +39,15 @@ export default function Login({ mode = 'login' }: LoginProps) {
     setError(null);
     const id = identifier.trim();
     if (!id || !password) {
-      setError('Please enter your email or phone and password.');
+      setError(t('auth.invalidCredentials'));
       return;
     }
     if (isSignUp && name.trim().length < 2) {
-      setError('Please enter your name.');
+      setError(t('auth.nameRequired'));
       return;
     }
     if (isSignUp && password.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setError(t('auth.passwordLength'));
       return;
     }
 
@@ -102,22 +104,21 @@ export default function Login({ mode = 'login' }: LoginProps) {
           </Text>
 
           <Text style={styles.tagline}>
-            Learning continues, even when connectivity
-            doesn’t.
+            {t('auth.offlinePrompt')}
           </Text>
         </View>
 
         {/* Heading */}
         <Text style={styles.title}>
           {isSignUp
-            ? 'Create your account'
-            : 'Welcome back'}
+            ? t('auth.createAccountTitle')
+            : t('auth.welcomeBack')}
         </Text>
 
         <Text style={styles.subtitle}>
           {isSignUp
-            ? 'Start your learning journey with GyanSetu.'
-            : 'Continue your learning journey.'}
+            ? t('auth.createAccountSubtitle')
+            : t('auth.continueJourney')}
         </Text>
 
         {/* Form */}
@@ -125,12 +126,12 @@ export default function Login({ mode = 'login' }: LoginProps) {
           {isSignUp && (
             <>
               <Text style={styles.label}>
-                Full Name
+                {t('auth.fullName')}
               </Text>
 
               <TextInput
                 style={styles.input}
-                placeholder="Enter your name"
+                placeholder={t('auth.namePlaceholder')}
                 placeholderTextColor="#9AA39C"
                 value={name}
                 onChangeText={setName}
@@ -141,12 +142,12 @@ export default function Login({ mode = 'login' }: LoginProps) {
           )}
 
           <Text style={styles.label}>
-            Email or Phone
+            {t('auth.identifier')}
           </Text>
 
           <TextInput
             style={styles.input}
-            placeholder="Enter your email or phone"
+            placeholder={t('auth.identifierPlaceholder')}
             placeholderTextColor="#9AA39C"
             value={identifier}
             onChangeText={setIdentifier}
@@ -157,13 +158,13 @@ export default function Login({ mode = 'login' }: LoginProps) {
           />
 
           <Text style={styles.label}>
-            Password
+            {t('auth.password')}
           </Text>
 
           <View style={styles.passwordContainer}>
             <TextInput
               style={styles.passwordInput}
-              placeholder={isSignUp ? 'At least 8 characters' : 'Enter your password'}
+              placeholder={isSignUp ? t('auth.passwordLength') : t('auth.passwordPlaceholder')}
               placeholderTextColor="#9AA39C"
               value={password}
               onChangeText={setPassword}
@@ -180,8 +181,8 @@ export default function Login({ mode = 'login' }: LoginProps) {
             >
               <Text style={styles.showText}>
                 {showPassword
-                  ? 'Hide'
-                  : 'Show'}
+                  ? t('auth.hide')
+                  : t('auth.show')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -192,7 +193,7 @@ export default function Login({ mode = 'login' }: LoginProps) {
               onPress={() => router.push('/forgot-password')}
             >
               <Text style={styles.forgotText}>
-                Forgot password?
+                {t('auth.forgotPassword')}
               </Text>
             </TouchableOpacity>
           )}
@@ -215,15 +216,15 @@ export default function Login({ mode = 'login' }: LoginProps) {
             ) : (
               <Text style={styles.primaryButtonText}>
                 {isSignUp
-                  ? 'Create Account'
-                  : 'Login'}
+                  ? t('auth.createAccountAction')
+                  : t('auth.loginAction')}
               </Text>
             )}
           </TouchableOpacity>
 
           {pendingSyncCount > 0 && (
             <Text style={styles.syncNote}>
-              {pendingSyncCount} offline change{pendingSyncCount === 1 ? '' : 's'} will be saved to your account.
+              {t('auth.pendingOfflineChanges', { count: pendingSyncCount })}
             </Text>
           )}
         </View>
@@ -233,7 +234,7 @@ export default function Login({ mode = 'login' }: LoginProps) {
           <View style={styles.divider} />
 
           <Text style={styles.dividerText}>
-            OR
+            {t('auth.or')}
           </Text>
 
           <View style={styles.divider} />
@@ -251,13 +252,11 @@ export default function Login({ mode = 'login' }: LoginProps) {
 
           <View style={styles.offlineContent}>
             <Text style={styles.offlineTitle}>
-              Continue offline
+              {t('auth.continueOffline')}
             </Text>
 
             <Text style={styles.offlineSubtitle}>
-              Explore the Starter Bundle without an
-              account. Your progress is saved on this
-              device and can be added to an account later.
+              {t('auth.continueOfflineAccountDescription')}
             </Text>
           </View>
         </TouchableOpacity>
@@ -266,8 +265,8 @@ export default function Login({ mode = 'login' }: LoginProps) {
         <View style={styles.switchContainer}>
           <Text style={styles.switchText}>
             {isSignUp
-              ? 'Already have an account?'
-              : "Don't have an account?"}
+              ? t('auth.alreadyHaveAccount')
+              : t('auth.noAccount')}
           </Text>
 
           <TouchableOpacity
@@ -278,16 +277,15 @@ export default function Login({ mode = 'login' }: LoginProps) {
           >
             <Text style={styles.switchAction}>
               {isSignUp
-                ? ' Login'
-                : ' Create Account'}
+                ? ` ${t('auth.loginAction')}`
+                : ` ${t('auth.createAccountAction')}`}
             </Text>
           </TouchableOpacity>
         </View>
 
         {/* Footer */}
         <Text style={styles.footer}>
-          Your learning data stays available
-          offline on this device.
+          {t('auth.learningDataOffline')}
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

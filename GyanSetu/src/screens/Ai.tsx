@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import * as Crypto from 'expo-crypto';
 import { useLocalSearchParams } from 'expo-router';
+import { useTranslation } from '@/i18n';
 import { errorMessage } from '@/lib/api';
 import { goBackOr } from '@/lib/nav';
 import { askTutor } from '@/services/ai';
@@ -26,10 +27,10 @@ type Message = {
 };
 
 const suggestedQuestions = [
-  'What is the difference between a list and a tuple?',
-  'What is a primary key?',
-  'Explain the OSI model.',
-];
+  'ai.suggestionListTuple',
+  'ai.suggestionPrimaryKey',
+  'ai.suggestionOsi',
+] as const;
 
 const CONFIDENCE = { high: 'High', medium: 'Medium', low: 'Low' } as const;
 
@@ -39,6 +40,7 @@ export default function AI() {
   const askedFromNavigator = useRef(false);
   const online = useApp(selectOnline);
   const authed = useApp((st) => st.sessionStatus === 'authed');
+  const { t } = useTranslation();
   const useOnlineAi = online && authed;
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
@@ -48,10 +50,13 @@ export default function AI() {
     {
       id: 'welcome',
       role: 'ai',
-      text:
-        'Hi! I am GyanSetu AI. I can answer questions using your downloaded learning material, even when you are offline.',
+      text: t('ai.welcome'),
     },
   ]);
+
+  const visibleMessages = messages.map((message, index) =>
+    index === 0 && message.role === 'ai' ? { ...message, text: t('ai.welcome') } : message,
+  );
 
   const askQuestion = async (question?: string) => {
     const finalQuestion = (question ?? input).trim();
@@ -76,8 +81,8 @@ export default function AI() {
         source: answer.sources.length
           ? answer.sources.map((src) => src.label).join('\n')
           : answer.mode === 'online'
-            ? 'General knowledge (not from your course material)'
-            : 'Downloaded material',
+          ? t('ai.generalKnowledge')
+          : t('ai.downloadedMaterial'),
         confidence: CONFIDENCE[answer.confidence],
         mode: answer.mode,
       };
@@ -132,7 +137,7 @@ export default function AI() {
               <View style={styles.statusDot} />
 
               <Text style={styles.statusText}>
-                {useOnlineAi ? 'Online tutor' : 'Offline learning assistant'}
+                {useOnlineAi ? t('ai.onlineTutor') : t('ai.offlineAssistant')}
               </Text>
             </View>
           </View>
@@ -142,15 +147,15 @@ export default function AI() {
       {/* Offline information */}
       <View style={styles.offlineBanner}>
         <Text style={styles.offlineTitle}>
-          {useOnlineAi ? '🌐 Online Mode' : '🟢 Offline Mode'}
+          {useOnlineAi ? t('ai.onlineMode') : t('ai.offlineMode')}
         </Text>
 
         <Text style={styles.offlineDescription}>
           {useOnlineAi
-            ? 'Answers come from the GyanSetu tutor, using your course material where it can. Every answer shows its source.'
+            ? t('ai.onlineDescription')
             : online
-              ? 'Answers come from your downloaded material. Log in to ask the online tutor.'
-              : 'Answers are based only on your downloaded learning material.'}
+              ? t('ai.offlineDescription')
+              : t('ai.noInternetDescription')}
         </Text>
       </View>
 
@@ -163,25 +168,23 @@ export default function AI() {
         keyboardShouldPersistTaps="handled"
       >
         {/* Intro */}
-        {messages.length === 1 && (
+        {visibleMessages.length === 1 && (
           <View style={styles.introCard}>
             <Text style={styles.introTitle}>
-              Ask anything from your lessons
+              {t('ai.askAnything')}
             </Text>
 
             <Text style={styles.introDescription}>
-              GyanSetu searches your stored notes,
-              lectures and course material before
-              answering.
+              {t('ai.askAnythingDescription')}
             </Text>
 
             <Text style={styles.introNote}>
-              {useOnlineAi ? 'Online now. Works offline too.' : 'No internet required.'}
+              {useOnlineAi ? t('ai.onlineMode') : t('ai.noInternetRequired')}
             </Text>
           </View>
         )}
 
-        {messages.map((message) => {
+        {visibleMessages.map((message) => {
           const isUser = message.role === 'user';
 
           return (
@@ -222,7 +225,7 @@ export default function AI() {
                 {!isUser && message.source && (
                   <View style={styles.sourceCard}>
                     <Text style={styles.sourceLabel}>
-                      {message.mode === 'online' ? 'SOURCE • ONLINE' : 'SOURCE • OFFLINE'}
+                      {message.mode === 'online' ? t('ai.sourceOnline') : t('ai.sourceOffline')}
                     </Text>
 
                     <Text style={styles.sourceText}>
@@ -231,7 +234,7 @@ export default function AI() {
 
                     <View style={styles.confidenceRow}>
                       <Text style={styles.confidenceLabel}>
-                        Confidence
+                        {t('ai.confidence')}
                       </Text>
 
                       <View
@@ -248,7 +251,11 @@ export default function AI() {
                             styles.confidenceText
                           }
                         >
-                          {message.confidence}
+                          {message.confidence === 'High'
+                            ? t('ai.confidenceHigh')
+                            : message.confidence === 'Medium'
+                              ? t('ai.confidenceMedium')
+                              : t('ai.confidenceLow')}
                         </Text>
                       </View>
                     </View>
@@ -265,24 +272,24 @@ export default function AI() {
               <Text>🤖</Text>
             </View>
             <View style={[styles.messageBubble, styles.aiBubble]}>
-              <Text style={[styles.messageText, styles.aiMessageText]}>Thinking…</Text>
+              <Text style={[styles.messageText, styles.aiMessageText]}>{t('ai.thinking')}</Text>
             </View>
           </View>
         )}
 
         {/* Suggested Questions */}
         <Text style={styles.suggestedTitle}>
-          Try asking
+          {t('ai.askPrompt')}
         </Text>
 
-        {suggestedQuestions.map((question) => (
+        {suggestedQuestions.map((questionKey) => (
           <Pressable
-            key={question}
+            key={questionKey}
             style={styles.suggestion}
-            onPress={() => askQuestion(question)}
+            onPress={() => askQuestion(t(questionKey))}
           >
             <Text style={styles.suggestionText}>
-              {question}
+              {t(questionKey)}
             </Text>
 
             <Text style={styles.suggestionArrow}>
@@ -299,7 +306,7 @@ export default function AI() {
         <TextInput
           value={input}
           onChangeText={setInput}
-          placeholder="Ask something from your lessons..."
+          placeholder={t('ai.placeholder')}
           placeholderTextColor="#89938C"
           multiline
           style={styles.input}

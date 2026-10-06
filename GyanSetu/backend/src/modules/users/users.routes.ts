@@ -18,7 +18,7 @@ usersRouter.get('/', async (req, res) => {
 // PATCH /v1/me
 const PatchMe = z.object({
   name: z.string().trim().min(2).max(80).optional(),
-  preferredLanguage: z.enum(['en', 'hi']).optional(),
+  preferredLanguage: z.enum(['en', 'hi', 'mr', 'bn', 'ta', 'te', 'gu']).optional(),
 });
 
 usersRouter.patch('/', async (req, res) => {

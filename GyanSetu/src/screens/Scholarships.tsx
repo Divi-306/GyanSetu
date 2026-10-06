@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { errorMessage } from '@/lib/api';
+import { useTranslation } from '@/i18n';
 import { formatDate, timeAgo } from '@/lib/format';
 import { goBackOr } from '@/lib/nav';
 import { loadScholarships, type Scholarship, type ScholarshipList } from '@/services/account';
@@ -21,12 +22,13 @@ const TABS = ['All', 'Likely match', 'Check details'] as const;
 type Tab = (typeof TABS)[number];
 
 const STATUS = {
-  likely_eligible: { label: 'Likely match', icon: '🎯' },
-  check_details: { label: 'Check details', icon: '📝' },
-  not_eligible: { label: 'Not a match', icon: '📄' },
+  likely_eligible: { label: 'scholarship.likelyMatch', icon: '🎯' },
+  check_details: { label: 'scholarship.checkDetails', icon: '📝' },
+  not_eligible: { label: 'scholarship.notMatch', icon: '📄' },
 } as const;
 
 function ScholarshipCard({ scholarship }: { scholarship: Scholarship }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const status = STATUS[scholarship.match.status];
 
@@ -65,7 +67,7 @@ function ScholarshipCard({ scholarship }: { scholarship: Scholarship }) {
           ]}
         >
           <Text style={styles.categoryText}>
-            {status.label}
+            {t(status.label)}
           </Text>
         </View>
 
@@ -86,7 +88,7 @@ function ScholarshipCard({ scholarship }: { scholarship: Scholarship }) {
             </Text>
           ))}
           <Text style={styles.verified}>
-            Details last verified {formatDate(scholarship.lastVerifiedAt)}
+            {t('scholarship.verified', { date: formatDate(scholarship.lastVerifiedAt) })}
           </Text>
         </View>
       )}
@@ -96,11 +98,11 @@ function ScholarshipCard({ scholarship }: { scholarship: Scholarship }) {
 
         <View>
           <Text style={styles.deadlineLabel}>
-            Deadline
+            {t('scholarship.deadline')}
           </Text>
 
           <Text style={styles.deadline}>
-            {scholarship.deadline ? formatDate(scholarship.deadline) : 'Open'}
+            {scholarship.deadline ? formatDate(scholarship.deadline) : t('scholarship.open')}
           </Text>
         </View>
 
@@ -112,7 +114,7 @@ function ScholarshipCard({ scholarship }: { scholarship: Scholarship }) {
           ]}
         >
           <Text style={styles.applyText}>
-            Apply
+            {t('scholarship.apply')}
           </Text>
         </Pressable>
 
@@ -122,6 +124,7 @@ function ScholarshipCard({ scholarship }: { scholarship: Scholarship }) {
 }
 
 export default function Scholarships() {
+  const { t } = useTranslation();
   const authed = useApp((s) => s.sessionStatus === 'authed');
   const [activeTab, setActiveTab] = useState<Tab>('All');
   const [search, setSearch] = useState('');
@@ -179,7 +182,7 @@ export default function Scholarships() {
           </Pressable>
 
           <Text style={styles.headerTitle}>
-            Scholarships
+            {t('navigation.scholarships')}
           </Text>
 
           <Pressable style={styles.notificationButton} onPress={() => router.push('/profile/edit')}>
@@ -196,21 +199,21 @@ export default function Scholarships() {
           {/* Intro */}
           <View style={styles.intro}>
             <Text style={styles.title}>
-              Find Scholarships
+              {t('scholarship.find')}
             </Text>
 
             <Text style={styles.subtitle}>
-              Scholarships you appear to match, based on your profile.
+              {t('scholarship.subtitle')}
             </Text>
           </View>
 
           {!authed && (
             <View style={styles.notice}>
               <Text style={styles.noticeText}>
-                Log in to see scholarships matched to your profile.
+                {t('scholarship.loginPrompt')}
               </Text>
               <Pressable style={styles.noticeButton} onPress={() => router.push('/login')}>
-                <Text style={styles.noticeButtonText}>Log in</Text>
+                <Text style={styles.noticeButtonText}>{t('common.login')}</Text>
               </Pressable>
             </View>
           )}
@@ -218,17 +221,17 @@ export default function Scholarships() {
           {authed && list && !list.profileComplete && (
             <View style={styles.notice}>
               <Text style={styles.noticeText}>
-                Add your details and allow matching to see which scholarships you qualify for.
+                {t('scholarship.completeProfilePrompt')}
               </Text>
               <Pressable style={styles.noticeButton} onPress={() => router.push('/profile/edit')}>
-                <Text style={styles.noticeButtonText}>Complete profile</Text>
+                <Text style={styles.noticeButtonText}>{t('scholarship.completeProfile')}</Text>
               </Pressable>
             </View>
           )}
 
           {list?.stale && (
             <Text style={styles.staleText}>
-              You’re offline. Showing scholarships as of {timeAgo(list.fetchedAt)}.
+              {t('scholarship.offlineResults', { time: timeAgo(list.fetchedAt) })}
             </Text>
           )}
 
@@ -243,7 +246,7 @@ export default function Scholarships() {
                 <TextInput
                   value={search}
                   onChangeText={setSearch}
-                  placeholder="Search scholarships..."
+                  placeholder={t('scholarship.searchPlaceholder')}
                   placeholderTextColor="#8B928B"
                   style={styles.searchInput}
                   returnKeyType="search"
@@ -284,7 +287,7 @@ export default function Scholarships() {
                             isActive && styles.activeTabText,
                           ]}
                         >
-                          {tab}
+                          {tab === 'All' ? t('scholarship.all') : t(`scholarship.${tab === 'Likely match' ? 'likelyMatch' : 'checkDetails'}`)}
                         </Text>
                       </Pressable>
                     );
@@ -295,7 +298,7 @@ export default function Scholarships() {
               {/* Results count */}
               <View style={styles.resultHeader}>
                 <Text style={styles.resultTitle}>
-                  Scholarships for you
+                  {t('scholarship.forYou')}
                 </Text>
 
                 <Text style={styles.resultCount}>
@@ -316,11 +319,11 @@ export default function Scholarships() {
                   <Text style={styles.emptyIcon}>🔎</Text>
 
                   <Text style={styles.emptyTitle}>
-                    No scholarships found
+                    {t('scholarship.notFound')}
                   </Text>
 
                   <Text style={styles.emptyText}>
-                    Try a different search or tab.
+                    {t('scholarship.tryDifferent')}
                   </Text>
                 </View>
               )}
@@ -333,12 +336,12 @@ export default function Scholarships() {
 
             <View style={styles.infoContent}>
               <Text style={styles.infoTitle}>
-                Scholarship information
+                {t('scholarship.information')}
               </Text>
 
               <Text style={styles.infoText}>
                 {list?.disclaimer ??
-                  'Eligibility and deadlines may change. Always verify the details on the official scholarship website before applying.'}
+                  t('scholarship.defaultDisclaimer')}
               </Text>
             </View>
           </View>

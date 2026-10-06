@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
+import { useApp } from '@/stores/appStore';
 
 /**
  * Where the API lives.
@@ -71,6 +72,14 @@ async function rawFetch(path: string, init: RequestInit, timeoutMs: number): Pro
   }
 }
 
+function getLanguageHeaders(): Record<string, string> {
+  const language = useApp.getState().language || 'en';
+  return {
+    'Accept-Language': language,
+    'X-Language': language,
+  };
+}
+
 let refreshing: Promise<boolean> | null = null;
 
 async function refreshTokens(): Promise<boolean> {
@@ -108,6 +117,7 @@ export async function api<T>(path: string, opts: ApiOptions = {}, retry = true):
       method,
       headers: {
         Accept: 'application/json',
+        ...getLanguageHeaders(),
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
