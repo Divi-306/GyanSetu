@@ -1,7 +1,7 @@
 import { router, type Href } from 'expo-router';
 import { db } from '@/db';
-import { getContinueLearning, listLessons } from '@/services/learning';
-import { resolveCourse, searchLocal, type KnownCourse } from './resolve';
+import { getPackDetail, listMyPacks } from '@/services/learningPacks';
+import { resolvePack, searchLocal, type KnownPack } from './resolve';
 import type { NavActionName, NavContext, NavIntent, NavOutcome } from './types';
 
 type ActionDef = {
@@ -14,31 +14,39 @@ type ActionDef = {
 
 // ── Small helpers ─────────────────────────────────────
 
-const go = (href: Href, message: string, courseId: string | null = null): NavOutcome => {
+const go = (href: Href, message: string, packId: string | null = null): NavOutcome => {
   router.push(href);
-  return { message, navigated: true, ok: true, courseId };
+  return { message, navigated: true, ok: true, packId };
 };
 
 const fail = (message: string): NavOutcome => ({ message, navigated: false, ok: false });
 
-const titleOf = async (courseId: string) =>
-  (await db.getFirstAsync<{ title: string }>('SELECT title FROM courses WHERE id = ?', courseId))?.title ?? courseId;
+const titleOf = async (packId: string) =>
+  (await db.getFirstAsync<{ title: string }>('SELECT title FROM lp_packs WHERE pack_id = ?', packId))?.title ?? packId;
 
 /**
- * The course a step is about: the one the student named, or (if they named
- * none) the course on screen. `named` is true when they said a name we
+ * The pack a step is about: the one the student named, or (if they named
+ * none) the pack on screen. `named` is true when they said a name we
  * couldn't match — we then refuse instead of guessing.
  */
-async function courseFor(intent: NavIntent, ctx: NavContext): Promise<{ course: KnownCourse | null; unmatched: string | null }> {
+async function packFor(intent: NavIntent, ctx: NavContext): Promise<{ pack: KnownPack | null; unmatched: string | null }> {
   if (intent.target?.trim()) {
-    const course = await resolveCourse(intent.target);
-    return { course, unmatched: course ? null : intent.target.trim() };
+    const pack = await resolvePack(intent.target);
+    return { pack, unmatched: pack ? null : intent.target.trim() };
   }
-  if (ctx.currentCourseId) return { course: { id: ctx.currentCourseId, title: await titleOf(ctx.currentCourseId) }, unmatched: null };
-  return { course: null, unmatched: null };
+  if (ctx.currentPackId) return { pack: { id: ctx.currentPackId, title: await titleOf(ctx.currentPackId) }, unmatched: null };
+  return { pack: null, unmatched: null };
 }
 
-const notFoundCourse = (name: string) => fail(`Sorry, I couldn't find a "${name}" course.`);
+const notFoundPack = (name: string) => fail(`Sorry, I couldn't find a "${name}" learning pack.`);
+
+/** The pack the student most recently studied, if any. */
+async function mostRecentPack(): Promise<KnownPack | null> {
+  const packs = await listMyPacks();
+  const onDevice = packs.filter((p) => p.onDevice);
+  if (onDevice.length === 0) return null;
+  return { id: onDevice[0].packId, title: onDevice[0].title };
+}
 
 // ── The registry ──────────────────────────────────────
 
@@ -58,101 +66,131 @@ export const registry: Record<NavActionName, ActionDef> = {
   },
 
   OPEN_COURSES: {
-    description: 'Open the course list',
-    run: async () => go('/courses', 'Opening your courses.'),
+    description: 'Open my learning packs',
+    run: async () => go('/packs', 'Opening your learning packs.'),
   },
 
   OPEN_COURSE: {
-    description: 'Open a specific course',
+    description: 'Open a specific learning pack',
     run: async (intent, ctx) => {
-      const { course, unmatched } = await courseFor(intent, ctx);
-      if (unmatched) return notFoundCourse(unmatched);
-      if (!course) return fail('Which course? For example: "open my DSA course".');
-      return go(`/course/${course.id}`, `Opening ${course.title}.`, course.id);
+      const { pack, unmatched } = await packFor(intent, ctx);
+      if (unmatched) return notFoundPack(unmatched);
+      if (!pack) return fail('Which learning pack? For example: "open my DSA pack".');
+      return go(`/packs/${pack.id}`, `Opening ${pack.title}.`, pack.id);
     },
   },
 
   OPEN_LESSON: {
-    description: 'Open a lesson by number or title',
+    description: 'Open a topic by number or title',
     run: async (intent, ctx) => {
-      const { course, unmatched } = await courseFor(intent, ctx);
-      if (unmatched) return notFoundCourse(unmatched);
-      if (!course) return fail('Which course is that lesson in? For example: "open lesson 2 of Python".');
-      const lessons = await listLessons(course.id);
-      let lesson = intent.lessonNumber ? lessons.find((l) => l.position === intent.lessonNumber) : undefined;
-      if (!lesson && intent.query) {
+      const { pack, unmatched } = await packFor(intent, ctx);
+      if (unmatched) return notFoundPack(unmatched);
+      if (!pack) return fail('Which pack is that topic in? For example: "open topic 2 of Python".');
+      const topics = await db.getAllAsync<{ id: string; title: string; position: number }>(
+        'SELECT id, title, position FROM lp_topics WHERE pack_id = ? ORDER BY position',
+        pack.id,
+      );
+      let topic = intent.lessonNumber ? topics.find((t) => t.position === intent.lessonNumber) : undefined;
+      if (!topic && intent.query) {
         const q = intent.query.toLowerCase();
-        lesson = lessons.find((l) => l.title.toLowerCase().includes(q));
+        topic = topics.find((t) => t.title.toLowerCase().includes(q));
       }
-      if (!lesson) {
-        const what = intent.lessonNumber ? `Lesson ${intent.lessonNumber}` : `"${intent.query ?? 'That lesson'}"`;
+      if (!topic) {
+        const what = intent.lessonNumber ? `Topic ${intent.lessonNumber}` : `"${intent.query ?? 'That topic'}"`;
         return fail(
-          lessons.length === 0
-            ? `${course.title} isn't downloaded yet. Open the course and tap Download.`
-            : `${what} of ${course.title} isn't on your phone.`,
+          topics.length === 0
+            ? `${pack.title} isn't downloaded yet. Open the pack and tap Download.`
+            : `${what} of ${pack.title} isn't on your phone.`,
         );
       }
-      return go(`/lesson/${lesson.id}`, `Opening Lesson ${lesson.position}: ${lesson.title}.`, course.id);
+      return go(`/packs/${pack.id}/topic/${topic.id}`, `Opening: ${topic.title}.`, pack.id);
     },
   },
 
   START_NEXT_LESSON: {
-    description: 'Start the next lesson not yet completed',
+    description: 'Start the next topic not yet completed',
     run: async (intent, ctx) => {
-      let { course, unmatched } = await courseFor(intent, ctx);
-      if (unmatched) return notFoundCourse(unmatched);
-      if (!course) {
-        const resume = await getContinueLearning();
-        if (!resume) return go('/starter-bundle', "You haven't started a course yet — here's the Starter Bundle.");
-        course = { id: resume.courseId, title: resume.title };
+      let { pack, unmatched } = await packFor(intent, ctx);
+      if (unmatched) return notFoundPack(unmatched);
+      if (!pack) {
+        const recent = await mostRecentPack();
+        if (!recent) return go('/learn', "You haven't started a learning pack yet — let's create one.");
+        pack = recent;
       }
-      const lessons = await listLessons(course.id);
-      if (lessons.length === 0) {
-        return go(`/course/${course.id}`, `${course.title} isn't on your phone yet — opening it so you can download it.`, course.id);
-      }
-      const next = lessons.find((l) => !l.completed);
-      if (!next) return go(`/course/${course.id}`, `You've finished every downloaded lesson of ${course.title}! 🎉`, course.id);
-      return go(`/lesson/${next.id}`, `Starting Lesson ${next.position}: ${next.title}.`, course.id);
+      const detail = await getPackDetail(pack.id);
+      if (!detail) return go(`/packs/${pack.id}`, `${pack.title} isn't on your phone yet — opening it so you can download it.`, pack.id);
+      if (!detail.resumeTopicId) return go(`/packs/${pack.id}`, `You've finished every downloaded topic of ${pack.title}! 🎉`, pack.id);
+      const topic = detail.modules.flatMap((m) => m.topics).find((t) => t.id === detail.resumeTopicId);
+      return go(`/packs/${pack.id}/topic/${detail.resumeTopicId}`, `Starting: ${topic?.title ?? 'the next topic'}.`, pack.id);
     },
   },
 
   CONTINUE_LEARNING: {
     description: 'Resume where the student left off',
     run: async () => {
-      const resume = await getContinueLearning();
-      if (!resume) return go('/starter-bundle', "You haven't started anything yet — here's the Starter Bundle.");
-      if (resume.lastLessonId) {
-        const exists = await db.getFirstAsync('SELECT 1 FROM lessons WHERE id = ?', resume.lastLessonId);
-        if (exists) return go(`/lesson/${resume.lastLessonId}`, `Continuing ${resume.title}.`, resume.courseId);
-      }
-      return go(`/course/${resume.courseId}`, `Opening ${resume.title}.`, resume.courseId);
+      const recent = await mostRecentPack();
+      if (!recent) return go('/learn', "You haven't started anything yet — let's create a learning pack.");
+      const detail = await getPackDetail(recent.id);
+      if (detail?.resumeTopicId) return go(`/packs/${recent.id}/topic/${detail.resumeTopicId}`, `Continuing ${recent.title}.`, recent.id);
+      return go(`/packs/${recent.id}`, `Opening ${recent.title}.`, recent.id);
     },
   },
 
   SHOW_PROGRESS: {
-    description: 'Show progress overall or for a course',
+    description: 'Show progress overall or for a pack',
     run: async (intent, ctx) => {
-      // Overall progress only when no course is named; "my progress" on a course screen means that course.
-      const { course, unmatched } = await courseFor(intent, ctx);
-      if (unmatched) return notFoundCourse(unmatched);
-      if (course) return go(`/course/${course.id}`, `Here's your progress in ${course.title}.`, course.id);
-      return go('/profile', "Here's your overall progress.");
+      // Overall progress only when no pack is named; "my progress" on a pack screen means that pack.
+      const { pack, unmatched } = await packFor(intent, ctx);
+      if (unmatched) return notFoundPack(unmatched);
+      if (pack) return go(`/packs/${pack.id}`, `Here's your progress in ${pack.title}.`, pack.id);
+      return go('/progress', "Here's your overall progress.");
     },
+  },
+
+  LEARN_SUBJECT: {
+    description: 'Create a learning pack for any subject',
+    run: async (intent) => {
+      const said = (intent.target ?? intent.query ?? '').trim();
+      // "Python in 15 days" → subject "Python", 15 days. The Learn screen still lets them change it.
+      const days = /\b(?:in|for)\s+(\d{1,3})\s*days?\b/i.exec(said);
+      const subject = said
+        .replace(/\b(?:in|for)\s+\d{1,3}\s*days?\b/i, '')
+        .replace(/^(please\s+)?(teach me|i want to learn|i'?d like to learn|learn|make a pack for|study)\s+(about\s+)?/i, '')
+        .trim();
+      return go(
+        { pathname: '/learn', params: { ...(subject ? { subject } : {}), ...(days ? { days: days[1] } : {}) } },
+        subject ? `Let's build a learning pack for ${subject}.` : 'What would you like to learn?',
+      );
+    },
+  },
+
+  OPEN_LEARNING_PACKS: {
+    description: 'Open my learning packs',
+    run: async () => go('/packs', 'Opening your learning packs.'),
+  },
+
+  OPEN_CAREER: {
+    description: 'Career guidance and roadmap',
+    run: async () => go('/career', 'Opening career guidance.'),
+  },
+
+  OPEN_STORAGE: {
+    description: 'Offline storage',
+    run: async () => go('/storage', 'Opening offline storage.'),
+  },
+
+  OPEN_REMINDERS: {
+    description: 'Learning reminder settings',
+    run: async () => go('/settings/reminders', 'Opening learning reminders.'),
   },
 
   OPEN_QUIZ: {
     description: 'Practise with a quiz',
     run: async (intent, ctx) => {
-      const { course, unmatched } = await courseFor(intent, ctx);
-      if (unmatched) return notFoundCourse(unmatched);
-      if (!course) return go('/quizzes', 'Opening your quizzes.');
-      const quiz = await db.getFirstAsync<{ id: string; title: string }>(
-        `SELECT q.id, q.title FROM quizzes q WHERE q.course_id = ?
-           AND EXISTS (SELECT 1 FROM quiz_questions qq WHERE qq.quiz_id = q.id) ORDER BY q.title LIMIT 1`,
-        course.id,
-      );
-      if (!quiz) return fail(`There's no ${course.title} quiz on your phone yet. Download the course to get its quizzes.`);
-      return go(`/quiz/${quiz.id}`, `Starting ${quiz.title}.`, course.id);
+      const { pack, unmatched } = await packFor(intent, ctx);
+      if (unmatched) return notFoundPack(unmatched);
+      if (!pack) return go('/packs', 'Open a learning pack, then say "quiz me" to test yourself on it.');
+      return go(`/packs/${pack.id}/quiz`, `Opening quizzes for ${pack.title}.`, pack.id);
     },
   },
 
@@ -170,11 +208,6 @@ export const registry: Record<NavActionName, ActionDef> = {
   OPEN_SETTINGS: {
     description: 'Settings live in the profile',
     run: async () => go('/profile', 'Your settings (language, sync, logout) are in your profile.'),
-  },
-
-  OPEN_STARTER_BUNDLE: {
-    description: 'Open the Starter Bundle',
-    run: async () => go('/starter-bundle', 'Opening the Starter Bundle.'),
   },
 
   OPEN_AI_TUTOR: {
@@ -201,7 +234,7 @@ export const registry: Record<NavActionName, ActionDef> = {
   },
 
   SEARCH: {
-    description: 'Search courses and downloaded lessons',
+    description: 'Search learning packs and downloaded topics',
     run: async (intent) => {
       const query = intent.query?.trim() || intent.target?.trim();
       if (!query) return fail('What should I search for?');
@@ -227,17 +260,13 @@ export const registry: Record<NavActionName, ActionDef> = {
     description: 'A feature the app does not have',
     run: async (intent) => {
       const what = (intent.target ?? 'that').trim();
-      const hint = /assign|homework|test|exam|task/i.test(what)
-        ? ' You can practise with quizzes — say "open my quizzes".'
-        : /notif|alert|message/i.test(what)
-          ? ' Your sync status is in your profile.'
-          : '';
+      const hint = /assign|homework|test|exam|task/i.test(what) ? ' You can practise with quizzes — say "open my quizzes".' : '';
       return fail(`GyanSetu doesn't have ${what} yet.${hint}`);
     },
   },
 
   UNKNOWN: {
     description: 'Not understood',
-    run: async () => fail('Sorry, I didn\'t understand that. Try "open my courses" or "start my next lesson".'),
+    run: async () => fail('Sorry, I didn\'t understand that. Try "teach me Python in 15 days" or "continue where I left off".'),
   },
 };

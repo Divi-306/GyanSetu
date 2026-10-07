@@ -1,4 +1,3 @@
-import * as Notifications from 'expo-notifications';
 import { router, Stack, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
@@ -6,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { NavigatorHost } from '@/components/NavigatorHost';
 import { initApp, startConnectivity } from '@/services/bootstrap';
+import { onNotificationOpened } from '@/services/reminders';
 import { useApp } from '@/stores/appStore';
 
 export default function RootLayout() {
@@ -27,13 +27,9 @@ export default function RootLayout() {
   // Tapping a learning reminder opens the lesson it was about.
   useEffect(() => {
     if (!ready) return;
-    const open = (response: Notifications.NotificationResponse | null) => {
-      const url = response?.notification.request.content.data?.url;
-      if (typeof url === 'string' && url.startsWith('/')) router.push(url as Href);
-    };
-    void Notifications.getLastNotificationResponseAsync().then(open);
-    const sub = Notifications.addNotificationResponseReceivedListener(open);
-    return () => sub.remove();
+    return onNotificationOpened((url) => {
+      if (url.startsWith('/')) router.push(url as Href);
+    });
   }, [ready]);
 
   return (

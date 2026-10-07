@@ -19,7 +19,9 @@ export type SyncItemType =
   | 'LP_CHAT_MESSAGE'
   | 'LP_CHAT_CLEARED'
   | 'LP_VIDEO_PROGRESS'
-  | 'LP_STUDY_TIME';
+  | 'LP_STUDY_TIME'
+  | 'LP_QUIZ_SAVED'
+  | 'LP_QUIZ_ATTEMPT';
 
 type SyncResult = { id: string | null; status: 'applied' | 'duplicate' | 'rejected' | 'error'; code?: string; message?: string };
 
@@ -149,6 +151,15 @@ type PullResponse = {
   packChatClears?: { packId: string; clearedAt: string }[];
   packVideoProgress?: { packId: string; videoId: string; positionSec: number; durationSec: number | null; completedAt: string | null; updatedAt: string }[];
   studyDays?: { day: string; seconds: number }[];
+  packQuizzes?: {
+    id: string; packId: string; packVersion: number; subject: string; difficulty: string; topicIds: string[];
+    questions: { id: string; topicId: string; question: string; options: string[]; correctIndex: number; explanation: string; difficulty: string }[];
+    source: string; createdAt: string;
+  }[];
+  packQuizAttempts?: {
+    id: string; quizId: string; packId: string; answers: { questionId: string; selectedIndex: number }[]; score: number; total: number;
+    correctCount: number; wrongCount: number; weakTopicIds: string[]; timeTakenSec: number; startedAt: string | null; submittedAt: string;
+  }[];
 };
 
 /** Server timestamps arrive in any ISO form; local rows compare as strings, so normalise. */
@@ -285,6 +296,28 @@ export async function pull() {
         await db.runAsync(
           'INSERT INTO study_days (day, seconds) VALUES (?, ?) ON CONFLICT(day) DO UPDATE SET seconds = max(study_days.seconds, excluded.seconds)',
           d.day, d.seconds,
+        );
+      }
+      for (const q of res.packQuizzes ?? []) {
+        await db.runAsync(
+          `INSERT INTO lp_quizzes (pack_id, id, subject, difficulty, topic_ids_json, source, pack_version, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(pack_id, id) DO NOTHING`,
+          q.packId, q.id, q.subject, q.difficulty, JSON.stringify(q.topicIds), q.source, q.packVersion, iso(q.createdAt),
+        );
+        for (const [i, item] of q.questions.entries()) {
+          await db.runAsync(
+            `INSERT INTO lp_quiz_questions (pack_id, quiz_id, id, position, topic_id, question, options_json, correct_index, explanation, difficulty)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(pack_id, quiz_id, id) DO NOTHING`,
+            q.packId, q.id, item.id, i, item.topicId, item.question, JSON.stringify(item.options), item.correctIndex, item.explanation, item.difficulty,
+          );
+        }
+      }
+      for (const a of res.packQuizAttempts ?? []) {
+        await db.runAsync(
+          `INSERT INTO lp_quiz_attempts (pack_id, quiz_id, id, answers_json, score, total, correct_count, wrong_count, weak_topics_json, time_taken_sec, started_at, submitted_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(pack_id, quiz_id, id) DO NOTHING`,
+          a.packId, a.quizId, a.id, JSON.stringify(a.answers), a.score, a.total, a.correctCount, a.wrongCount,
+          JSON.stringify(a.weakTopicIds), a.timeTakenSec, iso(a.startedAt), iso(a.submittedAt),
         );
       }
       for (const m of res.packChat ?? []) {

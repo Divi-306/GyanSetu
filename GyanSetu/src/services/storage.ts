@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { File, Paths } from 'expo-file-system';
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate';
-import { db, kvGet, kvSet } from '@/db';
+import { db, kvDelete, kvGet, kvSet } from '@/db';
 import { daysBetween, localDay } from '@/lib/dates';
 import { selectOnline, useApp } from '@/stores/appStore';
 import { changed, deleteFileQuietly } from './learningPacks';
@@ -282,6 +282,24 @@ export async function runStorageMaintenance(now = new Date()): Promise<StorageNo
   await kvSet(NOTICES_KEY, notices.slice(-20));
   changed();
   return notices;
+}
+
+// ─────────────────────────── Dev-only: test the 7/30-day timers without waiting ───────────────────────────
+
+/**
+ * DEV BUILDS ONLY. Pretends a pack hasn't been opened for `daysAgo` days, clears any
+ * "Keep Pack" snooze and the maintenance throttle, then runs maintenance immediately —
+ * so the 7-day auto-compress and 30-day deletion-warning logic can be verified on demand
+ * instead of waiting for real time to pass. A no-op in production builds.
+ */
+export async function devSimulateUnused(packId: string, daysAgo: number): Promise<StorageNotice[]> {
+  if (!__DEV__) return getNotices();
+  const at = new Date(Date.now() - daysAgo * DAY_MS).toISOString();
+  await db.runAsync('UPDATE lp_packs SET last_opened_at = ? WHERE pack_id = ?', at, packId);
+  await kvDelete(`storage.keep.${packId}`);
+  await kvDelete('storage.lastMaintenance');
+  changed();
+  return runStorageMaintenance();
 }
 
 /** Export/backup before deleting: the student's progress for one pack, as JSON they can save or share. */

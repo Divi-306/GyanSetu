@@ -4,8 +4,8 @@ import { logger } from '../../lib/logger';
 import { replyLanguage, unescapeNewlines } from '../ai/ai.service';
 import { aiConfigured, complete } from '../ai/providers';
 import { loadPackContent } from './generator';
-import { QUESTIONS_JSON_SCHEMA, sanitizeQuestions, type LearningPackContent, type Topic } from './pack.schema';
-import { FLASHCARDS_SYSTEM, INSIGHTS_SYSTEM, QUESTIONS_SYSTEM, TUTOR_SYSTEM, insightsUser, questionsUser, tutorUser } from './prompts';
+import { QUESTIONS_JSON_SCHEMA, QUIZ_JSON_SCHEMA, sanitizeQuestions, type LearningPackContent, type Topic } from './pack.schema';
+import { FLASHCARDS_SYSTEM, INSIGHTS_SYSTEM, QUESTIONS_SYSTEM, QUIZ_SYSTEM, TUTOR_SYSTEM, insightsUser, questionsUser, quizUser, tutorUser } from './prompts';
 import { findTopic, searchTopics } from './search';
 
 const parseJson = (s: string): unknown => {
@@ -171,6 +171,59 @@ export async function generateTopicQuestions(input: {
     topicId: topic.id,
     mcqs: sanitizeQuestions.mcqs(raw.mcqs, input.mcqCount).map((q, i) => ({ id: `${topic.id}~xmcq-${stamp}-${i + 1}`, ...q })),
     viva: sanitizeQuestions.viva(raw.viva, input.vivaCount).map((q, i) => ({ id: `${topic.id}~xviva-${stamp}-${i + 1}`, ...q })),
+  };
+}
+
+// ─────────────────────────── Standalone quiz generator ───────────────────────────
+// "Generate Quiz" on a whole pack (or chosen topics): a self-contained, savable quiz.
+
+const MAX_QUIZ_TOPICS = 12;
+
+export async function generateQuiz(input: {
+  packId: string;
+  topicIds?: string[];
+  difficulty: 'easy' | 'medium' | 'hard';
+  count: number;
+}) {
+  requireAi();
+  const pack = await loadPackContent(input.packId);
+  const allTopics = pack.modules.flatMap((m) => m.topics.map((t) => ({ topic: t, moduleTitle: m.title })));
+  const known = new Set(allTopics.map((t) => t.topic.id));
+  let chosen = input.topicIds?.length ? allTopics.filter((t) => input.topicIds!.includes(t.topic.id)) : allTopics;
+  if (chosen.length === 0) chosen = allTopics;
+  if (chosen.length > MAX_QUIZ_TOPICS) {
+    // Spread the pick evenly across the chosen topics rather than only the first N.
+    const step = chosen.length / MAX_QUIZ_TOPICS;
+    chosen = Array.from({ length: MAX_QUIZ_TOPICS }, (_, i) => chosen[Math.floor(i * step)]);
+  }
+
+  const result = await complete({
+    system: QUIZ_SYSTEM,
+    user: quizUser({
+      topics: chosen.map(({ topic, moduleTitle }) => ({ id: topic.id, title: topic.title, material: topicMaterial(topic, moduleTitle) })),
+      difficulty: input.difficulty,
+      count: input.count,
+    }),
+    schema: QUIZ_JSON_SCHEMA,
+    schemaName: 'pack_quiz',
+    maxTokens: Math.min(8000, 400 * input.count + 1000),
+    timeoutMs: 90_000,
+  });
+  if (result.kind === 'refused') throw unreadable();
+  const raw = parseJson(result.text) as { questions?: unknown[] } | undefined;
+  if (!raw || !Array.isArray(raw.questions)) throw unreadable();
+
+  const stamp = Date.now().toString(36);
+  const questions = sanitizeQuestions
+    .quiz(raw.questions, input.count)
+    .filter((q) => known.has(q.topicId))
+    .map((q, i) => ({ id: `${pack.packId}~quiz-${stamp}-${i + 1}`, ...q }));
+
+  return {
+    subject: pack.title,
+    difficulty: input.difficulty,
+    topicIds: [...new Set(chosen.map((c) => c.topic.id))],
+    questions,
   };
 }
 

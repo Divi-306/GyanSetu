@@ -2,7 +2,7 @@ import { api, ApiError, NetworkError } from '@/lib/api';
 import { selectOnline, useApp } from '@/stores/appStore';
 import { parseLocally } from './localParser';
 import { registry } from './registry';
-import { listKnownCourses } from './resolve';
+import { listKnownPacks } from './resolve';
 import { NAV_ACTION_NAMES, type NavContext, type NavIntent, type NavOutcome } from './types';
 
 /**
@@ -22,8 +22,8 @@ const KNOWN = new Set<string>(NAV_ACTION_NAMES);
 
 /** Ask the backend AI (provider-agnostic; the key never leaves the server). */
 async function understandOnline(text: string, ctx: NavContext): Promise<NavIntent[]> {
-  const courses = await listKnownCourses();
-  const current = ctx.currentCourseId ? courses.find((c) => c.id === ctx.currentCourseId) ?? null : null;
+  const packs = await listKnownPacks();
+  const current = ctx.currentPackId ? packs.find((p) => p.id === ctx.currentPackId) ?? null : null;
   const res = await api<{ actions: NavIntent[] }>('/v1/navigator/intent', {
     method: 'POST',
     timeoutMs: 15_000,
@@ -31,9 +31,9 @@ async function understandOnline(text: string, ctx: NavContext): Promise<NavInten
       message: text,
       context: {
         route: ctx.route,
-        courses: courses.slice(0, 60),
+        packs: packs.slice(0, 60),
         screenItems: ctx.screenItems.slice(0, 30).map((i) => i.title.slice(0, 120)),
-        currentCourse: current,
+        currentPack: current,
       },
     },
   });
@@ -73,8 +73,8 @@ export async function runCommand(text: string, ctx: NavContext): Promise<Command
     messages.push(last.message);
     anyNavigated ||= last.navigated;
     if (!last.ok) break;
-    // Later steps ("…and start the next lesson") act on the course this step opened.
-    if (last.courseId) context = { ...context, currentCourseId: last.courseId };
+    // Later steps ("…and start the next lesson") act on the pack this step opened.
+    if (last.packId) context = { ...context, currentPackId: last.packId };
   }
 
   // One confirmation for multi-step commands: the final step's message (or the failure).

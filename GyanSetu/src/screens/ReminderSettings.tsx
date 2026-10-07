@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { C, Card, Header, styles as ui } from '@/components/packs/ui';
 import type { ReminderPrefs } from '@/reminders/rules';
-import { ensureNotificationPermission, getReminderPrefs, setReminderPrefs } from '@/services/reminders';
+import { ensureNotificationPermission, getReminderPrefs, notificationsAvailable, setReminderPrefs } from '@/services/reminders';
 
 const FREQUENCIES: { label: string; days: ReminderPrefs['frequencyDays'] }[] = [
   { label: 'Daily', days: 1 },
@@ -23,9 +23,15 @@ export default function ReminderSettings() {
 
   const update = async (patch: Partial<ReminderPrefs>) => {
     setNote(null);
-    if (patch.enabled && !(await ensureNotificationPermission())) {
-      setNote('Notifications are turned off for GyanSetu in your phone settings. Turn them on there to get reminders.');
-      return;
+    if (patch.enabled) {
+      if (!(await notificationsAvailable())) {
+        setNote('Reminders aren’t available in this version of the app on this device. Your other learning features still work normally.');
+        return;
+      }
+      if (!(await ensureNotificationPermission())) {
+        setNote('Notifications are turned off for GyanSetu in your phone settings. Turn them on there to get reminders.');
+        return;
+      }
     }
     setPrefs(await setReminderPrefs(patch));
   };

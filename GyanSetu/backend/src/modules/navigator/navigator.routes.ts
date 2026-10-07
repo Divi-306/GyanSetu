@@ -15,11 +15,11 @@ const IntentBody = z.object({
   context: z
     .object({
       route: z.string().max(120).default('/'),
-      courses: z.array(z.object({ id: Slug, title: z.string().max(120) })).max(60).default([]),
+      packs: z.array(z.object({ id: Slug, title: z.string().max(120) })).max(60).default([]),
       screenItems: z.array(z.string().max(120)).max(30).default([]),
-      currentCourse: z.object({ id: Slug, title: z.string().max(120) }).nullable().default(null),
+      currentPack: z.object({ id: Slug, title: z.string().max(120) }).nullable().default(null),
     })
-    .default({ route: '/', courses: [], screenItems: [], currentCourse: null }),
+    .default({ route: '/', packs: [], screenItems: [], currentPack: null }),
 });
 
 // POST /v1/navigator/intent

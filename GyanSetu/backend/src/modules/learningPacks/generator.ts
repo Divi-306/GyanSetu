@@ -6,7 +6,6 @@ import { logger } from '../../lib/logger';
 import { aiConfigured, complete } from '../ai/providers';
 import { hasLearningHistory, learnerProfileText, learningEvidence } from './history';
 import {
-  MODULE_JSON_SCHEMA,
   ModuleReply,
   OUTLINE_JSON_SCHEMA,
   OutlineReply,
@@ -14,6 +13,8 @@ import {
   PlanReply,
   sanitizeQuestions,
   slugify,
+  TOPIC_JSON_SCHEMA,
+  TopicReply,
   type LearningPackContent,
   type Level,
   type Module,
@@ -23,12 +24,19 @@ import {
   type Video,
 } from './pack.schema';
 import { applyPlan } from './plan';
-import { MODULE_SYSTEM, OUTLINE_SYSTEM, PLAN_SYSTEM, moduleUser, outlineUser, planUser } from './prompts';
+import { OUTLINE_SYSTEM, PLAN_SYSTEM, TOPIC_SYSTEM, outlineUser, planUser, topicUser } from './prompts';
 import { findVideos } from './videos';
 
-const MODULE_ATTEMPTS = 3;
+/** Each topic is its own small AI call (see generateTopic), so far fewer attempts are
+ * needed than the old one-call-per-whole-module approach — a transient failure here is
+ * cheap to retry. */
+const TOPIC_ATTEMPTS = 3;
+/** Outline generation has no pending row to retry later (it runs inline in the create-pack
+ * request), so it gets its own small retry budget against transient "AI busy" responses. */
+const OUTLINE_ATTEMPTS = 3;
 /** Module calls in flight across all generations: keeps us inside provider rate limits. */
-const MAX_PARALLEL_MODULE_CALLS = 3;
+/** Configurable: see PACK_MODULE_CONCURRENCY in config/env.ts for why this defaults low. */
+const MAX_PARALLEL_MODULE_CALLS = env.PACK_MODULE_CONCURRENCY;
 const GENERATION_TIMEOUT_MS = 180_000;
 
 // ─────────────────────────── Subject normalisation ───────────────────────────
@@ -79,14 +87,33 @@ async function generateOutline(input: {
   previousOutline?: Outline;
   changeRequest?: string;
 }) {
-  const result = await complete({
-    system: OUTLINE_SYSTEM,
-    user: outlineUser(input),
-    schema: OUTLINE_JSON_SCHEMA,
-    schemaName: 'learning_pack_outline',
-    maxTokens: 8000,
-    timeoutMs: 90_000,
-  });
+  // Runs synchronously inside the create-pack HTTP request (there's no pending row yet to
+  // retry later, unlike topics/modules), so a single transient "AI busy" must not surface
+  // as a hard failure to the student — retry here, sharing withSlot's pacing clock with
+  // every other call so this doesn't collide with topic generation either.
+  let result: Awaited<ReturnType<typeof complete>> | undefined;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= OUTLINE_ATTEMPTS; attempt++) {
+    try {
+      result = await withSlot(() =>
+        complete({
+          system: OUTLINE_SYSTEM,
+          user: outlineUser(input),
+          schema: OUTLINE_JSON_SCHEMA,
+          schemaName: 'learning_pack_outline',
+          maxTokens: 8000,
+          timeoutMs: 90_000,
+        }),
+      );
+      break;
+    } catch (err) {
+      lastErr = err;
+      const busy = err instanceof HttpError && err.code === 'AI_BUSY';
+      logger.warn({ attempt, err: err instanceof Error ? err.message : String(err) }, 'outline generation failed');
+      if (!busy) await sleep(1_500 * attempt);
+    }
+  }
+  if (!result) throw lastErr instanceof HttpError ? lastErr : new HttpError(502, 'AI_UNAVAILABLE', 'Could not design this learning pack right now. Please try again.');
   if (result.kind === 'refused') {
     throw new HttpError(422, 'NOT_LEARNABLE', "I can't create a learning pack for that. Try a different subject.");
   }
@@ -175,14 +202,16 @@ async function planDays(outline: Outline, req: PlanRequest): Promise<{ outline: 
     topics: m.topics.map((t) => ({ key: t.key, title: t.title, kind: t.kind, priority: t.priority, estimatedMinutes: t.estimatedMinutes })),
   }));
   try {
-    const result = await complete({
-      system: PLAN_SYSTEM,
-      user: planUser({ curriculum, durationDays: req.durationDays, dailyMinutes: req.dailyMinutes, goal: req.goal ?? undefined, level: outline.level }),
-      schema: PLAN_JSON_SCHEMA,
-      schemaName: 'duration_plan',
-      maxTokens: 12000,
-      timeoutMs: 120_000,
-    });
+    const result = await withSlot(() =>
+      complete({
+        system: PLAN_SYSTEM,
+        user: planUser({ curriculum, durationDays: req.durationDays, dailyMinutes: req.dailyMinutes, goal: req.goal ?? undefined, level: outline.level }),
+        schema: PLAN_JSON_SCHEMA,
+        schemaName: 'duration_plan',
+        maxTokens: 12000,
+        timeoutMs: 120_000,
+      }),
+    );
     const parsed = result.kind === 'json' ? PlanReply.safeParse(parseJson(result.text)) : null;
     if (parsed?.success) {
       return {
@@ -193,7 +222,9 @@ async function planDays(outline: Outline, req: PlanRequest): Promise<{ outline: 
     }
     logger.warn('planner reply unusable; using the deterministic plan');
   } catch (err) {
-    if (err instanceof HttpError && err.code === 'AI_BUSY') throw err;
+    // Every failure here — AI busy included — falls back to the deterministic plan rather
+    // than failing the whole pack creation: fallbackPlan() always succeeds with no AI call,
+    // and a sensible day-by-day layout beats a hard error when the account is rate-limited.
     logger.warn({ err: String(err) }, 'planner failed; using the deterministic plan');
   }
   return { outline: applyPlan(outline, fallbackPlan(outline, req), req), inputTokens: 0, outputTokens: 0 };
@@ -389,11 +420,39 @@ export async function resumeInterruptedGenerations() {
 
 let inFlight = 0;
 const waiting: (() => void)[] = [];
+
+/**
+ * Earliest time the next module-generation call may start. Shared globally (across every
+ * module of every pack being generated), because they all draw on the same AI provider
+ * key's one shared token-per-minute budget.
+ *
+ * This is NOT the same thing as `MAX_PARALLEL_MODULE_CALLS`: that only stops two calls
+ * being *in flight* at the same instant. A rejected call returns almost instantly (no
+ * real work happened), so without this gate, the moment one module's call is rejected and
+ * frees its slot, a *different* module's own retry loop immediately grabs the slot and
+ * fires straight into the same still-empty budget — which is exactly what "module A
+ * attempt 2, module B attempt 2, module C attempt 3, all within one second" in the logs
+ * looks like. Every call waits on this one clock before it may proceed; a busy response
+ * pushes it forward, so every OTHER module's next attempt waits too, not just that one.
+ */
+let nextCallAt = 0;
+const DEFAULT_BUSY_WAIT_MS = 45_000;
+
 async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
   if (inFlight >= MAX_PARALLEL_MODULE_CALLS) await new Promise<void>((r) => waiting.push(r));
   inFlight++;
   try {
-    return await fn();
+    const wait = nextCallAt - Date.now();
+    if (wait > 0) await sleep(wait);
+    try {
+      return await fn();
+    } catch (err) {
+      if (err instanceof HttpError && err.code === 'AI_BUSY') {
+        const retryAfterMs = (err.details as { retryAfterMs?: number } | undefined)?.retryAfterMs;
+        nextCallAt = Date.now() + (retryAfterMs ?? DEFAULT_BUSY_WAIT_MS);
+      }
+      throw err;
+    }
   } finally {
     inFlight--;
     waiting.shift()?.();
@@ -403,36 +462,7 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, env.NODE_ENV === 'test' ? 0 : ms));
 
 export type ModuleContent = ReturnType<typeof ModuleReply.parse>;
-
-async function generateModule(outline: Outline, moduleKey: string) {
-  const module = outline.modules.find((m) => m.key === moduleKey)!;
-  const packOutline = {
-    title: outline.title,
-    level: outline.level,
-    levelRange: outline.levelRange,
-    plan: outline.plan ? { durationDays: outline.plan.durationDays, dailyMinutes: outline.plan.dailyMinutes, goal: outline.plan.goal } : null,
-    modules: outline.modules.map((m) => ({
-      key: m.key,
-      title: m.title,
-      topics: m.topics.map((t) => `${t.title} [${t.kind ?? 'lesson'}${t.dayNumber ? `, day ${t.dayNumber}` : ''}]`),
-    })),
-  };
-  const result = await withSlot(() =>
-    complete({
-      system: MODULE_SYSTEM,
-      user: moduleUser({ packOutline, module }),
-      schema: MODULE_JSON_SCHEMA,
-      schemaName: 'learning_pack_module',
-      maxTokens: 16000,
-      timeoutMs: GENERATION_TIMEOUT_MS,
-    }),
-  );
-  if (result.kind === 'refused') throw new Error('model refused the module');
-  const parsed = ModuleReply.safeParse(parseJson(result.text));
-  if (!parsed.success) throw new Error(`module reply off-schema: ${parsed.error.issues[0]?.message}`);
-  const matched = module.topics.filter((t, i) => matchTopic(parsed.data, t.key, t.title, i)).length;
-  return { content: parsed.data, matched, expected: module.topics.length, result };
-}
+type TopicContent = ModuleContent['topics'][number];
 
 /** The model's topic for an outline topic: same key, else same title, else same position. */
 function matchTopic(content: ModuleContent, key: string, title: string, index: number) {
@@ -441,6 +471,96 @@ function matchTopic(content: ModuleContent, key: string, title: string, index: n
     content.topics.find((t) => t.title.trim().toLowerCase() === title.trim().toLowerCase()) ??
     content.topics[index]
   );
+}
+
+const compactOutline = (outline: Outline) => ({
+  title: outline.title,
+  level: outline.level,
+  levelRange: outline.levelRange,
+  plan: outline.plan ? { durationDays: outline.plan.durationDays, dailyMinutes: outline.plan.dailyMinutes, goal: outline.plan.goal } : null,
+  modules: outline.modules.map((m) => ({
+    key: m.key,
+    title: m.title,
+    topics: m.topics.map((t) => `${t.title} [${t.kind ?? 'lesson'}${t.dayNumber ? `, day ${t.dayNumber}` : ''}]`),
+  })),
+});
+
+/**
+ * One topic per call: the old one-call-per-whole-module approach needed up to 16,000
+ * output tokens in a single request, which a low-tier key's per-minute token budget
+ * (as low as 8,000, shared by every model on the account) can never satisfy — Groq
+ * rejects a request outright the instant its OWN requested max tokens exceeds that
+ * budget. A single topic needs a few thousand tokens, comfortably inside it.
+ */
+async function generateTopic(outline: Outline, moduleKey: string, topicKey: string) {
+  const module = outline.modules.find((m) => m.key === moduleKey)!;
+  const topic = module.topics.find((t) => t.key === topicKey)!;
+  const result = await withSlot(() =>
+    complete({
+      system: TOPIC_SYSTEM,
+      user: topicUser({ packOutline: compactOutline(outline), module: { key: module.key, title: module.title }, topic }),
+      schema: TOPIC_JSON_SCHEMA,
+      schemaName: 'learning_pack_topic',
+      maxTokens: 4000,
+      timeoutMs: GENERATION_TIMEOUT_MS,
+    }),
+  );
+  if (result.kind === 'refused') throw new Error('model refused the topic');
+  const parsed = TopicReply.safeParse(parseJson(result.text));
+  if (!parsed.success) throw new Error(`topic reply off-schema: ${parsed.error.issues[0]?.message}`);
+  return { content: parsed.data, result };
+}
+
+/** A markdown cheat-sheet of the module, built from its topics' own key points — no extra AI call needed. */
+function synthesizeRevisionNotes(moduleTitle: string, topics: TopicContent[]): string {
+  const sections = topics.map((t) => `## ${t.title}\n${t.keyPoints.map((k) => `- ${k}`).join('\n')}`).join('\n\n');
+  return `# ${moduleTitle} — revision\n\n${sections}`;
+}
+
+async function generateModule(outline: Outline, moduleKey: string) {
+  const module = outline.modules.find((m) => m.key === moduleKey)!;
+  const topicContents = new Map<string, TopicContent>();
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let lastError = '';
+
+  await Promise.all(
+    module.topics.map(async (topic) => {
+      for (let attempt = 1; attempt <= TOPIC_ATTEMPTS; attempt++) {
+        try {
+          const { content, result } = await generateTopic(outline, moduleKey, topic.key);
+          // Trust our own topic key, not the model's echo: downstream matching is exact-key based.
+          topicContents.set(topic.key, { ...content, key: topic.key });
+          if (result.kind === 'json') {
+            totalInputTokens += result.inputTokens ?? 0;
+            totalOutputTokens += result.outputTokens ?? 0;
+          }
+          return;
+        } catch (err) {
+          lastError = err instanceof Error ? err.message : String(err);
+          logger.warn({ moduleKey, topicKey: topic.key, attempt, err: lastError }, 'topic generation failed');
+          // A busy error already pushed withSlot's shared clock forward (see withSlot): the
+          // next attempt — for this topic or any other — waits there, so no extra sleep here
+          // (that would just double the wait). A non-busy failure isn't a budget problem, so
+          // it only gets a short pause.
+          const busy = err instanceof HttpError && err.code === 'AI_BUSY';
+          if (!busy) await sleep(1_500 * attempt);
+        }
+      }
+    }),
+  );
+
+  // Outline order; topics that never came back after every attempt are simply left out
+  // (same tolerance the old per-module generator had for a reply that skipped topics).
+  const topics = module.topics.map((t) => topicContents.get(t.key)).filter((t): t is TopicContent => !!t);
+  const content: ModuleContent = {
+    summary: topics.map((t) => t.summary).filter(Boolean).slice(0, 3).join(' '),
+    revisionNotes: synthesizeRevisionNotes(module.title, topics),
+    objectives: [...new Set(topics.flatMap((t) => t.objectives))].slice(0, 10),
+    glossary: [],
+    topics,
+  };
+  return { content, matched: topics.length, expected: module.topics.length, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, lastError };
 }
 
 async function runGeneration(packId: string, version: number) {
@@ -458,39 +578,32 @@ async function runGeneration(packId: string, version: number) {
 
   await Promise.all(
     pending.map(async ({ module_key }) => {
-      let lastError = '';
-      for (let attempt = 1; attempt <= MODULE_ATTEMPTS; attempt++) {
-        try {
-          const { content, matched, expected, result } = await generateModule(v.outline, module_key);
-          // A reply that skipped topics gets one more try; after that, keep what we have.
-          if (matched < expected && attempt < MODULE_ATTEMPTS - 1) throw new Error(`only ${matched}/${expected} topics`);
-          if (matched === 0) throw new Error('no topics in reply');
-          await withTransaction(async (db) => {
-            await db.query(
-              `UPDATE generated_pack_modules SET status = 'ready', content = $4, attempts = attempts + 1, error = NULL, updated_at = now()
-                WHERE pack_id = $1 AND version = $2 AND module_key = $3`,
-              [packId, version, module_key, JSON.stringify(content)],
-            );
-            await db.query(
-              `UPDATE generated_pack_versions SET modules_done = modules_done + 1,
-                 input_tokens = input_tokens + $3, output_tokens = output_tokens + $4
-                WHERE pack_id = $1 AND version = $2`,
-              [packId, version, result.kind === 'json' ? (result.inputTokens ?? 0) : 0, result.kind === 'json' ? (result.outputTokens ?? 0) : 0],
-            );
-          });
-          return;
-        } catch (err) {
-          lastError = err instanceof Error ? err.message : String(err);
-          logger.warn({ packId, version, module_key, attempt, err: lastError }, 'module generation failed');
-          // Rate limited: back off longer before the next attempt.
-          await sleep(err instanceof HttpError && err.code === 'AI_BUSY' ? 20_000 * attempt : 2_000 * attempt);
-        }
+      const { content, matched, expected, inputTokens, outputTokens, lastError } = await generateModule(v.outline, module_key);
+      if (matched === 0) {
+        logger.warn({ packId, version, module_key, err: lastError }, 'module generation failed: no topics came back');
+        await pool.query(
+          `UPDATE generated_pack_modules SET status = 'failed', attempts = attempts + 1, error = $4, updated_at = now()
+            WHERE pack_id = $1 AND version = $2 AND module_key = $3`,
+          [packId, version, module_key, lastError.slice(0, 500)],
+        );
+        return;
       }
-      await pool.query(
-        `UPDATE generated_pack_modules SET status = 'failed', attempts = attempts + $4, error = $5, updated_at = now()
-          WHERE pack_id = $1 AND version = $2 AND module_key = $3`,
-        [packId, version, module_key, MODULE_ATTEMPTS, lastError.slice(0, 500)],
-      );
+      if (matched < expected) {
+        logger.warn({ packId, version, module_key, matched, expected }, 'module generation partially succeeded; missing topics were left out');
+      }
+      await withTransaction(async (db) => {
+        await db.query(
+          `UPDATE generated_pack_modules SET status = 'ready', content = $4, attempts = attempts + 1, error = NULL, updated_at = now()
+            WHERE pack_id = $1 AND version = $2 AND module_key = $3`,
+          [packId, version, module_key, JSON.stringify(content)],
+        );
+        await db.query(
+          `UPDATE generated_pack_versions SET modules_done = modules_done + 1,
+             input_tokens = input_tokens + $3, output_tokens = output_tokens + $4
+            WHERE pack_id = $1 AND version = $2`,
+          [packId, version, inputTokens, outputTokens],
+        );
+      });
     }),
   );
 

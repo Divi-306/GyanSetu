@@ -8,16 +8,14 @@ import { backgroundCareerRefresh } from './career';
 import { evictStaleCachedPacks, refreshPackStatus } from './learningPacks';
 import { configureNotifications, rescheduleReminder } from './reminders';
 import { runStorageMaintenance } from './storage';
-import { importBundledStarter, refreshCatalog, refreshStarterPack } from './packs';
 import { flush, loadSyncState, syncNow } from './sync';
 
 /** Everything the first screen needs, all local: works with no internet on first launch. */
 export async function initApp() {
   await migrate();
-  await importBundledStarter();
   await loadSyncState();
   await evictStaleCachedPacks().catch((err) => console.warn('[bootstrap] evict', err));
-  configureNotifications();
+  void configureNotifications();
   // Never blocks the first screen; it only compresses optional data and raises notices.
   void runStorageMaintenance().catch((err) => console.warn('[bootstrap] storage', err));
   // Restores from the cached user immediately; refreshes from the server in the background.
@@ -39,8 +37,6 @@ async function onPossiblyOnline() {
   await Promise.all([
     // Library deletions from other devices are applied after the pull.
     background(syncNow().then(refreshPackStatus)),
-    background(refreshCatalog()),
-    background(refreshStarterPack()),
     background(backgroundCareerRefresh()),
   ]);
 }

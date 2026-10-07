@@ -251,36 +251,43 @@ export const VIDEO_PICKS_JSON_SCHEMA = obj({
 const MCQ_SCHEMA = obj({ question: str, options: arr(str), correctIndex: int, explanation: str, difficulty: oneOf(LEVELS) });
 const VIVA_SCHEMA = obj({ question: str, expectedAnswer: str, keyPoints: arr(str), followUp: str });
 
+/** One topic's full teaching content — shared by the per-module schema (legacy, unused for new generations) and the per-topic generator. */
+const TOPIC_CONTENT_SCHEMA = obj({
+  key: str,
+  title: str,
+  difficulty: oneOf(LEVELS),
+  estimatedMinutes: int,
+  objectives: arr(str),
+  explanation: str,
+  simpleExplanation: str,
+  analogy: str,
+  keyPoints: arr(str),
+  examples: arr(obj({ title: str, body: str, code: str, language: str, steps: arr(str) })),
+  formulas: arr(obj({ name: str, expression: str, meaning: str })),
+  commonMistakes: arr(obj({ mistake: str, correction: str })),
+  mcqs: arr(MCQ_SCHEMA),
+  viva: arr(VIVA_SCHEMA),
+  practice: arr(obj({ type: oneOf(PRACTICE_TYPES), prompt: str, hints: arr(str), solution: str, answerKeywords: arr(str) })),
+  flashcards: arr(obj({ front: str, back: str })),
+  summary: str,
+  keywords: arr(str),
+});
+
 export const MODULE_JSON_SCHEMA = obj({
   summary: str,
   revisionNotes: str,
   objectives: arr(str),
   glossary: arr(obj({ term: str, definition: str })),
-  topics: arr(
-    obj({
-      key: str,
-      title: str,
-      difficulty: oneOf(LEVELS),
-      estimatedMinutes: int,
-      objectives: arr(str),
-      explanation: str,
-      simpleExplanation: str,
-      analogy: str,
-      keyPoints: arr(str),
-      examples: arr(obj({ title: str, body: str, code: str, language: str, steps: arr(str) })),
-      formulas: arr(obj({ name: str, expression: str, meaning: str })),
-      commonMistakes: arr(obj({ mistake: str, correction: str })),
-      mcqs: arr(MCQ_SCHEMA),
-      viva: arr(VIVA_SCHEMA),
-      practice: arr(obj({ type: oneOf(PRACTICE_TYPES), prompt: str, hints: arr(str), solution: str, answerKeywords: arr(str) })),
-      flashcards: arr(obj({ front: str, back: str })),
-      summary: str,
-      keywords: arr(str),
-    }),
-  ),
+  topics: arr(TOPIC_CONTENT_SCHEMA),
 });
 
+/** One topic at a time — each call fits comfortably under a low-tier key's per-minute token budget. */
+export const TOPIC_JSON_SCHEMA = TOPIC_CONTENT_SCHEMA;
+
 export const QUESTIONS_JSON_SCHEMA = obj({ mcqs: arr(MCQ_SCHEMA), viva: arr(VIVA_SCHEMA) });
+
+const QUIZ_QUESTION_SCHEMA = obj({ topicId: str, question: str, options: arr(str), correctIndex: int, explanation: str, difficulty: oneOf(LEVELS) });
+export const QUIZ_JSON_SCHEMA = obj({ questions: arr(QUIZ_QUESTION_SCHEMA) });
 
 // ─────────────────── Validation of what the model actually returned ───────────────────
 
@@ -368,37 +375,41 @@ export const VideoPicksReply = z.object({
   ),
 });
 
+/** One topic's content, as the model returns it (shared by the per-module and per-topic generators). */
+const TopicContentReply = z.object({
+  key: text(80),
+  title: text(150, 1),
+  difficulty: lvl,
+  estimatedMinutes: z.number().int().catch(15).transform((n) => Math.min(240, Math.max(3, n))),
+  objectives: list(z.string().trim(), 8),
+  explanation: z.string().trim().min(1),
+  simpleExplanation: z.string().trim(),
+  analogy: z.string().trim(),
+  keyPoints: list(z.string().trim(), 12),
+  examples: list(
+    z.object({ title: z.string().trim(), body: z.string().trim(), code: z.string(), language: z.string().trim(), steps: z.array(z.string().trim()) }),
+    6,
+  ),
+  formulas: list(z.object({ name: z.string().trim(), expression: z.string().trim(), meaning: z.string().trim() }), 12),
+  commonMistakes: list(z.object({ mistake: z.string().trim(), correction: z.string().trim() }), 8),
+  mcqs: z.array(z.unknown()),
+  viva: z.array(z.unknown()),
+  practice: z.array(z.unknown()),
+  flashcards: z.array(z.unknown()),
+  summary: z.string().trim(),
+  keywords: list(text(60), 20),
+});
+
 export const ModuleReply = z.object({
   summary: z.string().trim(),
   revisionNotes: z.string().trim(),
   objectives: list(z.string().trim(), 10),
   glossary: list(z.object({ term: text(120), definition: text(600) }), 30),
-  topics: z.array(
-    z.object({
-      key: text(80),
-      title: text(150, 1),
-      difficulty: lvl,
-      estimatedMinutes: z.number().int().catch(15).transform((n) => Math.min(240, Math.max(3, n))),
-      objectives: list(z.string().trim(), 8),
-      explanation: z.string().trim().min(1),
-      simpleExplanation: z.string().trim(),
-      analogy: z.string().trim(),
-      keyPoints: list(z.string().trim(), 12),
-      examples: list(
-        z.object({ title: z.string().trim(), body: z.string().trim(), code: z.string(), language: z.string().trim(), steps: z.array(z.string().trim()) }),
-        6,
-      ),
-      formulas: list(z.object({ name: z.string().trim(), expression: z.string().trim(), meaning: z.string().trim() }), 12),
-      commonMistakes: list(z.object({ mistake: z.string().trim(), correction: z.string().trim() }), 8),
-      mcqs: z.array(z.unknown()),
-      viva: z.array(z.unknown()),
-      practice: z.array(z.unknown()),
-      flashcards: z.array(z.unknown()),
-      summary: z.string().trim(),
-      keywords: list(text(60), 20),
-    }),
-  ),
+  topics: z.array(TopicContentReply),
 });
+
+/** The per-topic generator's reply: one topic at a time, same shape as a `ModuleReply` topic entry. */
+export const TopicReply = TopicContentReply;
 
 const McqReply = z
   .object({
@@ -423,6 +434,16 @@ const PracticeReply = z.object({
   answerKeywords: z.array(z.string().trim()).max(12),
 });
 const FlashcardReply = z.object({ front: z.string().trim().min(1), back: z.string().trim().min(1) });
+const QuizQuestionReply = z
+  .object({
+    topicId: z.string().trim().min(1),
+    question: z.string().trim().min(1),
+    options: z.array(z.string().trim().min(1)).min(2).max(6),
+    correctIndex: z.number().int(),
+    explanation: z.string().trim(),
+    difficulty: lvl,
+  })
+  .refine((q) => q.correctIndex >= 0 && q.correctIndex < q.options.length && new Set(q.options).size === q.options.length);
 
 /**
  * Keeps only the questions that are internally consistent (e.g. correctIndex
@@ -443,6 +464,7 @@ export const sanitizeQuestions = {
   viva: (items: unknown[], max = 6) => keepValid(VivaReply, items, max),
   practice: (items: unknown[], max = 5) => keepValid(PracticeReply, items, max),
   flashcards: (items: unknown[], max = 10) => keepValid(FlashcardReply, items, max),
+  quiz: (items: unknown[], max = 20) => keepValid(QuizQuestionReply, items, max),
 };
 
 /** 'Longest Valid Parentheses!' → 'longest-valid-parentheses'. Used for stable module/topic ids. */

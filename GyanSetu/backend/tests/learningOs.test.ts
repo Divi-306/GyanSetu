@@ -57,14 +57,11 @@ const planReply = {
   ],
 };
 
-const moduleReply = (module: { topics: { key: string; title: string }[] }) => ({
-  summary: 's', revisionNotes: 'r', objectives: [], glossary: [],
-  topics: module.topics.map((t) => ({
-    key: t.key, title: t.title, difficulty: 'beginner', estimatedMinutes: 20, objectives: [], explanation: `About ${t.title}.`,
-    simpleExplanation: '', analogy: '', keyPoints: [], examples: [], formulas: [], commonMistakes: [],
-    mcqs: [{ question: 'Q?', options: ['a', 'b', 'c', 'd'], correctIndex: 0, explanation: '', difficulty: 'beginner' }],
-    viva: [], practice: [], flashcards: [], summary: '', keywords: [t.key],
-  })),
+const topicReply = (t: { key: string; title: string }) => ({
+  key: t.key, title: t.title, difficulty: 'beginner', estimatedMinutes: 20, objectives: [], explanation: `About ${t.title}.`,
+  simpleExplanation: '', analogy: '', keyPoints: [], examples: [], formulas: [], commonMistakes: [],
+  mcqs: [{ question: 'Q?', options: ['a', 'b', 'c', 'd'], correctIndex: 0, explanation: '', difficulty: 'beginner' }],
+  viva: [], practice: [], flashcards: [], summary: '', keywords: [t.key],
 });
 
 /** Routes stubbed calls: Groq by schema name, Wikimedia by host. Records prompts for assertions. */
@@ -91,7 +88,7 @@ function stub(opts: { videos?: boolean; career?: boolean } = {}) {
     calls.push({ schema, url: u, user });
     if (schema === 'learning_pack_outline') return groq(curriculumReply(/<subject>(.*)<\/subject>/.exec(user)![1]));
     if (schema === 'duration_plan') return groq(planReply);
-    if (schema === 'learning_pack_module') return groq(moduleReply(JSON.parse(/<module>\n([\s\S]*)\n<\/module>/.exec(user)![1])));
+    if (schema === 'learning_pack_topic') return groq(topicReply(JSON.parse(/<topic>\n([\s\S]*?)\n<\/topic>/.exec(user)![1])));
     if (schema === 'video_picks') return groq({ picks: [{ topicKey: 'pandas', query: 'pandas dataframe tutorial', maxMinutes: 8, reason: 'visual' }] });
     if (schema === 'career_guidance') {
       return groq({

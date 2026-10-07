@@ -80,7 +80,7 @@ syncRouter.get('/pull', async (req, res) => {
 
   const [
     progress, completions, attempts, notes, packLibrary, packProgress, packTopics, packAnswers, packChat, packChatClears,
-    packVideos, studyDays,
+    packVideos, studyDays, packQuizzes, packQuizAttempts,
   ] = await Promise.all([
     pool.query(
       `SELECT course_id, percent_complete, last_lesson_id, client_updated_at
@@ -143,6 +143,16 @@ syncRouter.get('/pull', async (req, res) => {
     pool.query(
       `SELECT to_char(day, 'YYYY-MM-DD') AS day, seconds FROM study_days
         WHERE user_id = $1 AND received_at > $2 AND day > current_date - 400`,
+      [userId, from],
+    ),
+    pool.query(
+      `SELECT id, pack_id, pack_version, subject, difficulty, topic_ids, questions, source, created_at
+         FROM pack_quizzes WHERE user_id = $1 AND received_at > $2`,
+      [userId, from],
+    ),
+    pool.query(
+      `SELECT id, quiz_id, pack_id, answers, score, total, correct_count, wrong_count, weak_topic_ids, time_taken_sec, started_at, submitted_at
+         FROM pack_quiz_attempts WHERE user_id = $1 AND received_at > $2`,
       [userId, from],
     ),
   ]);
@@ -227,6 +237,31 @@ syncRouter.get('/pull', async (req, res) => {
       updatedAt: r.client_updated_at,
     })),
     studyDays: studyDays.rows.map((r) => ({ day: r.day, seconds: r.seconds })),
+    packQuizzes: packQuizzes.rows.map((r) => ({
+      id: r.id,
+      packId: r.pack_id,
+      packVersion: r.pack_version,
+      subject: r.subject,
+      difficulty: r.difficulty,
+      topicIds: r.topic_ids,
+      questions: r.questions,
+      source: r.source,
+      createdAt: r.created_at,
+    })),
+    packQuizAttempts: packQuizAttempts.rows.map((r) => ({
+      id: r.id,
+      quizId: r.quiz_id,
+      packId: r.pack_id,
+      answers: r.answers,
+      score: r.score,
+      total: r.total,
+      correctCount: r.correct_count,
+      wrongCount: r.wrong_count,
+      weakTopicIds: r.weak_topic_ids,
+      timeTakenSec: r.time_taken_sec,
+      startedAt: r.started_at,
+      submittedAt: r.submitted_at,
+    })),
   });
 });
 

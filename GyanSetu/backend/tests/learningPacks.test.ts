@@ -61,36 +61,30 @@ function outlineFor(subject: string, opts: { learnable?: boolean; extraTopic?: b
   };
 }
 
-function moduleFor(module: { topics: { key: string; title: string }[] }) {
+function topicContentFor(t: { key: string; title: string }) {
   return {
-    summary: 'Module summary.',
-    revisionNotes: '## Cheat sheet\n- point',
-    objectives: ['Understand it'],
-    glossary: [{ term: 'Vertex', definition: 'A node of a graph.' }],
-    topics: module.topics.map((t) => ({
-      key: t.key,
-      title: t.title,
-      difficulty: 'beginner',
-      estimatedMinutes: 12,
-      objectives: ['Explain it'],
-      explanation: `## ${t.title}\nA graph is a set of vertices connected by edges. ${t.title} explained.`,
-      simpleExplanation: 'Dots joined by lines.',
-      analogy: 'Like cities joined by roads.',
-      keyPoints: ['Vertices are nodes', 'Edges connect vertices'],
-      examples: [{ title: 'Road map', body: 'Cities and roads.', code: '', language: '', steps: [] }],
-      formulas: [],
-      commonMistakes: [{ mistake: 'Edges must be straight', correction: 'Edges are just connections' }],
-      mcqs: [
-        { question: 'A graph is made of?', options: ['Vertices and edges', 'Rows', 'Bits', 'Files'], correctIndex: 0, explanation: 'By definition.', difficulty: 'beginner' },
-        // Invalid: correctIndex outside the options. Must be dropped, not break the module.
-        { question: 'Broken?', options: ['a', 'b'], correctIndex: 7, explanation: '', difficulty: 'beginner' },
-      ],
-      viva: [{ question: 'What is a graph?', expectedAnswer: 'Vertices joined by edges.', keyPoints: ['vertices', 'edges'], followUp: 'Directed?' }],
-      practice: [{ type: 'coding', prompt: 'Build an adjacency list.', hints: ['Use a map'], solution: 'adj = {}', answerKeywords: ['adjacency'] }],
-      flashcards: [{ front: 'Vertex?', back: 'A node' }],
-      summary: 'Graphs model connections.',
-      keywords: ['graph', 'vertex', 'edge'],
-    })),
+    key: t.key,
+    title: t.title,
+    difficulty: 'beginner',
+    estimatedMinutes: 12,
+    objectives: ['Explain it'],
+    explanation: `## ${t.title}\nA graph is a set of vertices connected by edges. ${t.title} explained.`,
+    simpleExplanation: 'Dots joined by lines.',
+    analogy: 'Like cities joined by roads.',
+    keyPoints: ['Vertices are nodes', 'Edges connect vertices'],
+    examples: [{ title: 'Road map', body: 'Cities and roads.', code: '', language: '', steps: [] }],
+    formulas: [],
+    commonMistakes: [{ mistake: 'Edges must be straight', correction: 'Edges are just connections' }],
+    mcqs: [
+      { question: 'A graph is made of?', options: ['Vertices and edges', 'Rows', 'Bits', 'Files'], correctIndex: 0, explanation: 'By definition.', difficulty: 'beginner' },
+      // Invalid: correctIndex outside the options. Must be dropped, not break the module.
+      { question: 'Broken?', options: ['a', 'b'], correctIndex: 7, explanation: '', difficulty: 'beginner' },
+    ],
+    viva: [{ question: 'What is a graph?', expectedAnswer: 'Vertices joined by edges.', keyPoints: ['vertices', 'edges'], followUp: 'Directed?' }],
+    practice: [{ type: 'coding', prompt: 'Build an adjacency list.', hints: ['Use a map'], solution: 'adj = {}', answerKeywords: ['adjacency'] }],
+    flashcards: [{ front: 'Vertex?', back: 'A node' }],
+    summary: 'Graphs model connections.',
+    keywords: ['graph', 'vertex', 'edge'],
   };
 }
 
@@ -106,9 +100,10 @@ function stubGroq(opts: { learnable?: boolean; failModule?: string; extraTopic?:
     if (schema === 'learning_pack_outline') {
       const subject = /<subject>(.*)<\/subject>/.exec(user)?.[1] ?? 'Graph Algorithms';
       reply = groqReply(outlineFor(subject, opts));
-    } else if (schema === 'learning_pack_module') {
-      const module = JSON.parse(/<module>\n([\s\S]*)\n<\/module>/.exec(user)![1]);
-      reply = module.key === opts.failModule ? { status: 500, json: {} } : groqReply(moduleFor(module));
+    } else if (schema === 'learning_pack_topic') {
+      const module = JSON.parse(/<module>\n([\s\S]*?)\n<\/module>/.exec(user)![1]);
+      const topic = JSON.parse(/<topic>\n([\s\S]*?)\n<\/topic>/.exec(user)![1]);
+      reply = module.key === opts.failModule ? { status: 500, json: {} } : groqReply(topicContentFor(topic));
     } else if (schema === 'pack_tutor_answer') {
       const sent = /<topic id="([^"]+)"/.exec(user)?.[1];
       reply = groqReply({
@@ -171,7 +166,7 @@ describe('dynamic learning packs', () => {
 
     const packId = res.body.pack.id;
     await waitForGeneration(packId, 1);
-    expect(calls.filter((c) => c.schema === 'learning_pack_module')).toHaveLength(2);
+    expect(calls.filter((c) => c.schema === 'learning_pack_topic')).toHaveLength(4);
 
     const status = await request(app).get(`/v1/learning-packs/${packId}`).set(bearer(token));
     expect(status.body.version).toMatchObject({ status: 'ready', modulesDone: 2, topicCount: 4 });
@@ -189,7 +184,9 @@ describe('dynamic learning packs', () => {
     expect(topic.id).toBe('what-is-a-graph');
     expect(topic.mcqs).toHaveLength(1); // the inconsistent MCQ was dropped
     expect(topic.mcqs[0].id).toBe('what-is-a-graph~mcq-1');
-    expect(pack.glossary).toHaveLength(1); // de-duplicated across modules
+    // Module metadata (summary, revisionNotes, glossary) is synthesised from the topics'
+    // own content now, not a separate AI-sourced field — no glossary call is made per topic.
+    expect(pack.glossary).toHaveLength(0);
   });
 
   it('reuses an existing public pack for the same subject without calling the AI', async () => {
@@ -225,7 +222,7 @@ describe('dynamic learning packs', () => {
     const retry = await request(app).post(`/v1/learning-packs/${packId}/versions/1/retry`).set(bearer(token));
     expect(retry.status).toBe(202);
     await waitForGeneration(packId, 1);
-    expect(calls.filter((c) => c.schema === 'learning_pack_module')).toHaveLength(1);
+    expect(calls.filter((c) => c.schema === 'learning_pack_topic')).toHaveLength(2);
     const ready = await request(app).get(`/v1/learning-packs/${packId}`).set(bearer(token));
     expect(ready.body.version.status).toBe('ready');
   });

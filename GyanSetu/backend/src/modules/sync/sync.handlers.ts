@@ -234,6 +234,32 @@ export async function applySyncItem(db: PoolClient, userId: string, item: SyncIt
       return;
     }
 
+    // Append-only: a saved quiz never changes after creation.
+    case 'LP_QUIZ_SAVED': {
+      const p = item.payload;
+      await db.query(
+        `INSERT INTO pack_quizzes (id, user_id, pack_id, pack_version, subject, difficulty, topic_ids, questions, source, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (id) DO NOTHING`,
+        [p.quizId, userId, p.packId, p.packVersion, p.subject, p.difficulty, JSON.stringify(p.topicIds), JSON.stringify(p.questions), p.source, p.createdAt],
+      );
+      return;
+    }
+
+    // Append-only, like LP_ANSWER_RECORDED, but at quiz-attempt granularity.
+    case 'LP_QUIZ_ATTEMPT': {
+      const p = item.payload;
+      await db.query(
+        `INSERT INTO pack_quiz_attempts
+           (id, user_id, quiz_id, pack_id, answers, score, total, correct_count, wrong_count, weak_topic_ids, time_taken_sec, started_at, submitted_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) ON CONFLICT (id) DO NOTHING`,
+        [
+          p.attemptId, userId, p.quizId, p.packId, JSON.stringify(p.answers), p.score, p.total, p.correctCount, p.wrongCount,
+          JSON.stringify(p.weakTopicIds), p.timeTakenSec, p.startedAt ?? null, p.submittedAt,
+        ],
+      );
+      return;
+    }
+
     case 'LP_CHAT_CLEARED': {
       const p = item.payload;
       await db.query(

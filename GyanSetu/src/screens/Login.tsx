@@ -255,7 +255,7 @@ export default function Login({ mode = 'login' }: LoginProps) {
             </Text>
 
             <Text style={styles.offlineSubtitle}>
-              Explore the Starter Bundle without an
+              Create and study learning packs without an
               account. Your progress is saved on this
               device and can be added to an account later.
             </Text>

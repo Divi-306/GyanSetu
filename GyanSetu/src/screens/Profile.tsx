@@ -9,22 +9,21 @@ import {
 } from 'react-native';
 import { Paths } from 'expo-file-system';
 import { router } from 'expo-router';
-import { db } from '@/db';
 import { useLocalData } from '@/hooks/useLocalData';
 import { errorMessage } from '@/lib/api';
 import { formatBytes, timeAgo } from '@/lib/format';
 import { goBackOr } from '@/lib/nav';
 import { deleteAccount, logout, pendingChanges, updateUser } from '@/services/account';
-import { getLearningStats } from '@/services/learning';
+import { getProgressOverview } from '@/services/analytics';
+import { listMyPacks } from '@/services/learningPacks';
 import { syncNow } from '@/services/sync';
 import { selectOnline, useApp } from '@/stores/appStore';
 
 async function loadProfileData() {
-  const stats = await getLearningStats();
-  const packs = await db.getFirstAsync<{ n: number; bytes: number | null }>(
-    "SELECT count(*) AS n, sum(size_bytes) AS bytes FROM learning_packs WHERE pack_key <> 'starter' AND state = 'ACTIVE'",
-  );
-  return { stats, packCount: packs?.n ?? 0, packBytes: packs?.bytes ?? 0, freeBytes: Paths.availableDiskSpace };
+  const stats = await getProgressOverview();
+  const onDevice = (await listMyPacks()).filter((p) => p.onDevice);
+  const packBytes = onDevice.reduce((sum, p) => sum + p.sizeBytes, 0);
+  return { stats, packCount: onDevice.length, packBytes, freeBytes: Paths.availableDiskSpace };
 }
 
 export default function Profile() {
@@ -165,27 +164,27 @@ export default function Profile() {
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>
-              {stats?.coursesStarted ?? 0}
+              {stats?.packs.length ?? 0}
             </Text>
 
             <Text style={styles.statLabel}>
-              Courses
+              Learning packs
             </Text>
           </View>
 
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>
-              {stats?.lessonsCompleted ?? 0}
+              {stats?.topicsCompleted ?? 0}
             </Text>
 
             <Text style={styles.statLabel}>
-              Lessons done
+              Topics done
             </Text>
           </View>
 
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>
-              {stats?.averagePercent ?? 0}%
+              {stats?.overallPercent ?? 0}%
             </Text>
 
             <Text style={styles.statLabel}>
@@ -199,7 +198,7 @@ export default function Profile() {
           Offline Learning
         </Text>
 
-        <TouchableOpacity style={styles.infoCard} onPress={() => router.push('/courses')}>
+        <TouchableOpacity style={styles.infoCard} onPress={() => router.push('/packs')}>
           <View style={styles.infoIcon}>
             <Text>📥</Text>
           </View>
@@ -211,8 +210,8 @@ export default function Profile() {
 
             <Text style={styles.infoSubtitle}>
               {data?.packCount
-                ? `${data.packCount} course${data.packCount === 1 ? '' : 's'} • ${formatBytes(data.packBytes)}`
-                : 'Starter Bundle only. Download courses to learn offline.'}
+                ? `${data.packCount} pack${data.packCount === 1 ? '' : 's'} • ${formatBytes(data.packBytes)}`
+                : 'No packs downloaded yet. Create one to learn offline.'}
             </Text>
           </View>
 

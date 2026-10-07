@@ -34,10 +34,10 @@ describe('POST /v1/navigator/intent', () => {
     const res = await request(app).post('/v1/navigator/intent').send({
       message: 'open my DSA course',
       context: {
-        route: '/courses',
-        courses: [{ id: 'dsa', title: 'Data Structures & Algorithms' }],
+        route: '/packs',
+        packs: [{ id: 'dsa', title: 'Data Structures & Algorithms' }],
         screenItems: ['Python Basics', 'DBMS'],
-        currentCourse: null,
+        currentPack: null,
       },
     });
     expect(res.status).toBe(200);

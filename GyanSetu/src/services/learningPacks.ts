@@ -182,6 +182,29 @@ export async function getInsights(packId: string) {
   return api<Insights>(`/v1/learning-packs/${packId}/insights`, { method: 'POST', body, timeoutMs: 70_000 });
 }
 
+// ─────────────────────────── Standalone quiz generator (online) ───────────────────────────
+
+export type QuizQuestion = {
+  id: string;
+  topicId: string;
+  question: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+  difficulty: Level;
+};
+
+export type GeneratedQuiz = { subject: string; difficulty: 'easy' | 'medium' | 'hard'; topicIds: string[]; questions: QuizQuestion[] };
+
+/** "Generate Quiz": any subject in this pack, any topic set, any difficulty/count. Not saved until saveQuizToPack(). */
+export function generateQuiz(packId: string, opts: { topicIds?: string[]; difficulty: 'easy' | 'medium' | 'hard'; count: 5 | 10 | 20 }) {
+  return api<GeneratedQuiz>(`/v1/learning-packs/${packId}/quiz/generate`, {
+    method: 'POST',
+    timeoutMs: 100_000,
+    body: opts,
+  });
+}
+
 // ═══════════════════════════ Download manager ═══════════════════════════
 
 export type DownloadPhase = 'downloading' | 'verifying' | 'saving';
@@ -1027,6 +1050,136 @@ export async function recordAnswer(
     });
   });
   changed();
+}
+
+// ═══════════════════════════ Pack-native quizzes (local) ═══════════════════════════
+// A quiz only exists offline once it is saved here — online generation (generateQuiz)
+// and offline sampling (buildOfflineQuiz) both end up calling saveQuizToPack, so every
+// quiz the student can "Take" has a stable id, questions on disk, and attempts that
+// sync like the rest of pack data.
+
+export type SavedQuiz = { id: string; subject: string; difficulty: string; topicIds: string[]; source: 'online' | 'offline'; createdAt: string; questionCount: number };
+
+/** Persists a generated (online or offline) quiz so it can be taken without internet. */
+export async function saveQuizToPack(packId: string, quiz: GeneratedQuiz, source: 'online' | 'offline' = 'online'): Promise<string> {
+  const id = Crypto.randomUUID();
+  const now = new Date().toISOString();
+  const version = await packVersion(packId);
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO lp_quizzes (pack_id, id, subject, difficulty, topic_ids_json, source, pack_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      packId, id, quiz.subject, quiz.difficulty, JSON.stringify(quiz.topicIds), source, version, now,
+    );
+    for (const [i, q] of quiz.questions.entries()) {
+      await db.runAsync(
+        `INSERT INTO lp_quiz_questions (pack_id, quiz_id, id, position, topic_id, question, options_json, correct_index, explanation, difficulty)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        packId, id, q.id, i, q.topicId, q.question, JSON.stringify(q.options), q.correctIndex, q.explanation, q.difficulty,
+      );
+    }
+    await enqueue(db, 'LP_QUIZ_SAVED', {
+      quizId: id, packId, packVersion: version, subject: quiz.subject, difficulty: quiz.difficulty, topicIds: quiz.topicIds,
+      questions: quiz.questions, source, createdAt: now,
+    });
+  });
+  changed();
+  return id;
+}
+
+export async function listPackQuizzes(packId: string): Promise<SavedQuiz[]> {
+  const rows = await db.getAllAsync<{ id: string; subject: string; difficulty: string; topic_ids_json: string; source: 'online' | 'offline'; created_at: string; n: number }>(
+    `SELECT q.id, q.subject, q.difficulty, q.topic_ids_json, q.source, q.created_at, (SELECT count(*) FROM lp_quiz_questions WHERE pack_id = q.pack_id AND quiz_id = q.id) AS n
+       FROM lp_quizzes q WHERE q.pack_id = ? ORDER BY q.created_at DESC`,
+    packId,
+  );
+  return rows.map((r) => ({ id: r.id, subject: r.subject, difficulty: r.difficulty, topicIds: JSON.parse(r.topic_ids_json), source: r.source, createdAt: r.created_at, questionCount: r.n }));
+}
+
+export async function getQuiz(packId: string, quizId: string): Promise<(SavedQuiz & { questions: QuizQuestion[] }) | null> {
+  const quiz = await db.getFirstAsync<{ id: string; subject: string; difficulty: string; topic_ids_json: string; source: 'online' | 'offline'; created_at: string }>(
+    'SELECT id, subject, difficulty, topic_ids_json, source, created_at FROM lp_quizzes WHERE pack_id = ? AND id = ?',
+    packId, quizId,
+  );
+  if (!quiz) return null;
+  const rows = await db.getAllAsync<{ id: string; topic_id: string; question: string; options_json: string; correct_index: number; explanation: string; difficulty: Level }>(
+    'SELECT id, topic_id, question, options_json, correct_index, explanation, difficulty FROM lp_quiz_questions WHERE pack_id = ? AND quiz_id = ? ORDER BY position',
+    packId, quizId,
+  );
+  const questions = rows.map((r) => ({ id: r.id, topicId: r.topic_id, question: r.question, options: JSON.parse(r.options_json), correctIndex: r.correct_index, explanation: r.explanation, difficulty: r.difficulty }));
+  return { id: quiz.id, subject: quiz.subject, difficulty: quiz.difficulty, topicIds: JSON.parse(quiz.topic_ids_json), source: quiz.source, createdAt: quiz.created_at, questionCount: questions.length, questions };
+}
+
+/** Offline "Take Quiz": samples existing mcq items from the pack's own bank — never requires internet. */
+export async function buildOfflineQuiz(packId: string, opts: { topicIds?: string[]; count: number }): Promise<GeneratedQuiz> {
+  const rows = opts.topicIds?.length
+    ? await db.getAllAsync<{ topic_id: string; payload_json: string }>(
+        `SELECT topic_id, payload_json FROM lp_items WHERE pack_id = ? AND kind = 'mcq' AND topic_id IN (SELECT value FROM json_each(?)) ORDER BY RANDOM()`,
+        packId, JSON.stringify(opts.topicIds),
+      )
+    : await db.getAllAsync<{ topic_id: string; payload_json: string }>(
+        `SELECT topic_id, payload_json FROM lp_items WHERE pack_id = ? AND kind = 'mcq' ORDER BY RANDOM()`,
+        packId,
+      );
+  const picked = rows.slice(0, opts.count);
+  const pack = await db.getFirstAsync<{ title: string }>('SELECT title FROM lp_packs WHERE pack_id = ?', packId);
+  const questions: QuizQuestion[] = picked.map((r) => {
+    const mcq = JSON.parse(r.payload_json) as Mcq;
+    return { id: mcq.id, topicId: r.topic_id, question: mcq.question, options: mcq.options, correctIndex: mcq.correctIndex, explanation: mcq.explanation, difficulty: mcq.difficulty };
+  });
+  return { subject: pack?.title ?? 'This pack', difficulty: 'medium', topicIds: opts.topicIds ?? [...new Set(questions.map((q) => q.topicId))], questions };
+}
+
+export type QuizAttemptResult = { score: number; total: number; correctCount: number; wrongCount: number; weakTopicIds: string[]; timeTakenSec: number };
+
+/** Scores a quiz attempt, mirrors each answer into lp_answers (so existing mastery/weak-topic logic sees it too), and syncs the attempt summary. */
+export async function recordQuizAttempt(
+  packId: string,
+  quizId: string,
+  answers: { questionId: string; selectedIndex: number }[],
+  startedAt: string,
+): Promise<QuizAttemptResult> {
+  const quiz = await getQuiz(packId, quizId);
+  if (!quiz) throw new Error('Quiz not found');
+  const byId = new Map(quiz.questions.map((q) => [q.id, q]));
+  const perTopicCorrect = new Map<string, { correct: number; total: number }>();
+  let correctCount = 0;
+  for (const a of answers) {
+    const q = byId.get(a.questionId);
+    if (!q) continue;
+    const correct = a.selectedIndex === q.correctIndex;
+    if (correct) correctCount++;
+    const t = perTopicCorrect.get(q.topicId) ?? { correct: 0, total: 0 };
+    t.total++;
+    if (correct) t.correct++;
+    perTopicCorrect.set(q.topicId, t);
+    await recordAnswer(packId, { topicId: q.topicId, itemId: q.id, kind: 'mcq', correct, score: correct ? 1 : 0 });
+  }
+  const total = quiz.questions.length;
+  const wrongCount = answers.length - correctCount;
+  const weakTopicIds = [...perTopicCorrect.entries()].filter(([, s]) => s.correct / s.total < 0.5).map(([id]) => id);
+  const now = new Date().toISOString();
+  const timeTakenSec = Math.max(0, Math.round((new Date(now).getTime() - new Date(startedAt).getTime()) / 1000));
+
+  const id = Crypto.randomUUID();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO lp_quiz_attempts (pack_id, quiz_id, id, answers_json, score, total, correct_count, wrong_count, weak_topics_json, time_taken_sec, started_at, submitted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      packId, quizId, id, JSON.stringify(answers), correctCount, total, correctCount, wrongCount, JSON.stringify(weakTopicIds), timeTakenSec, startedAt, now,
+    );
+    await enqueue(db, 'LP_QUIZ_ATTEMPT', {
+      attemptId: id, quizId, packId, answers, score: correctCount, total, correctCount, wrongCount, weakTopicIds, timeTakenSec, startedAt, submittedAt: now,
+    });
+  });
+  changed();
+  return { score: correctCount, total, correctCount, wrongCount, weakTopicIds, timeTakenSec };
+}
+
+export async function listQuizAttempts(packId: string, quizId: string) {
+  return db.getAllAsync<{ id: string; score: number; total: number; submitted_at: string }>(
+    'SELECT id, score, total, submitted_at FROM lp_quiz_attempts WHERE pack_id = ? AND quiz_id = ? ORDER BY submitted_at DESC',
+    packId, quizId,
+  );
 }
 
 // ═══════════════════════════ Offline tutor wiring ═══════════════════════════

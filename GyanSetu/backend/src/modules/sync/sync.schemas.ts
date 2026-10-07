@@ -148,6 +148,52 @@ export const SyncItem = z.discriminatedUnion('type', [
     // The student's local calendar date, so streaks match their days, not UTC.
     payload: z.object({ day: z.iso.date(), secondsDelta: z.number().int().min(1).max(86_400) }),
   }),
+  z.object({
+    ...base,
+    type: z.literal('LP_QUIZ_SAVED'),
+    payload: z.object({
+      quizId: z.uuid(),
+      packId: z.uuid(),
+      packVersion: z.number().int().min(1),
+      subject: z.string().max(200),
+      difficulty: z.enum(['easy', 'medium', 'hard']),
+      topicIds: z.array(TopicId).max(50),
+      questions: z
+        .array(
+          z.object({
+            id: z.string().min(1).max(200),
+            topicId: TopicId,
+            question: z.string().min(1).max(2000),
+            options: z.array(z.string().max(500)).min(2).max(6),
+            correctIndex: z.number().int().min(0).max(5),
+            explanation: z.string().max(2000),
+            difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
+          }),
+        )
+        .min(1)
+        .max(50),
+      source: z.enum(['online', 'offline']),
+      createdAt: Iso,
+    }),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('LP_QUIZ_ATTEMPT'),
+    payload: z.object({
+      attemptId: z.uuid(),
+      quizId: z.uuid(),
+      packId: z.uuid(),
+      answers: z.array(z.object({ questionId: z.string().min(1).max(200), selectedIndex: z.number().int().min(0).max(10) })).max(50),
+      score: z.number().int().min(0).max(50),
+      total: z.number().int().min(1).max(50),
+      correctCount: z.number().int().min(0).max(50),
+      wrongCount: z.number().int().min(0).max(50),
+      weakTopicIds: z.array(TopicId).max(50),
+      timeTakenSec: z.number().int().min(0).max(86_400),
+      startedAt: Iso.nullable().optional(),
+      submittedAt: Iso,
+    }),
+  }),
 ]);
 
 export type SyncItem = z.infer<typeof SyncItem>;

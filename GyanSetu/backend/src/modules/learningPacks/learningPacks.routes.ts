@@ -6,7 +6,7 @@ import { optionalAuth, requireAuth } from '../../middleware/auth';
 import { aiLimiter, packGenerationLimiter } from '../../middleware/rateLimits';
 import { requestNewVersion, requestPack, retryVersion } from './generator';
 import { LEVELS, type Outline } from './pack.schema';
-import { analyzeProgress, askPackTutor, generateTopicFlashcards, generateTopicQuestions } from './tutor.service';
+import { analyzeProgress, askPackTutor, generateQuiz, generateTopicFlashcards, generateTopicQuestions } from './tutor.service';
 
 export const learningPacksRouter = Router();
 
@@ -166,7 +166,7 @@ learningPacksRouter.post('/', requireAuth, packGenerationLimiter, async (req, re
 learningPacksRouter.delete('/history', requireAuth, async (req, res) => {
   const userId = req.user!.id;
   await withTransaction(async (db) => {
-    for (const table of ['pack_progress', 'pack_topic_progress', 'pack_answers', 'pack_chat_messages', 'pack_chat_clears', 'pack_video_progress', 'study_days', 'career_guidance']) {
+    for (const table of ['pack_progress', 'pack_topic_progress', 'pack_answers', 'pack_chat_messages', 'pack_chat_clears', 'pack_video_progress', 'study_days', 'career_guidance', 'pack_quiz_attempts', 'pack_quizzes']) {
       await db.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
     }
   });
@@ -274,6 +274,19 @@ learningPacksRouter.post('/:id/topics/:topicId/flashcards', requireAuth, aiLimit
   const pack = await readablePack(PackId.parse(req.params.id), req.user!.id);
   const { count } = z.object({ count: z.number().int().min(1).max(15).default(6) }).parse(req.body ?? {});
   res.json(await generateTopicFlashcards({ packId: pack.id, topicId: TopicId.parse(req.params.topicId), count }));
+});
+
+// ── POST /v1/learning-packs/:id/quiz/generate : a self-contained, savable quiz ──
+learningPacksRouter.post('/:id/quiz/generate', requireAuth, aiLimiter, async (req, res) => {
+  const pack = await readablePack(PackId.parse(req.params.id), req.user!.id);
+  const body = z
+    .object({
+      topicIds: z.array(TopicId).max(50).optional(),
+      difficulty: z.enum(['easy', 'medium', 'hard']).default('medium'),
+      count: z.union([z.literal(5), z.literal(10), z.literal(20)]).default(10),
+    })
+    .parse(req.body ?? {});
+  res.json(await generateQuiz({ packId: pack.id, ...body }));
 });
 
 // ── POST /v1/learning-packs/:id/insights : AI study plan from the student's progress ──

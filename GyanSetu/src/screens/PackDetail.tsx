@@ -44,7 +44,7 @@ export default function PackDetail() {
     () => (pack?.modules ?? []).flatMap((m) => m.topics.map((t) => ({ title: t.title, href: `/packs/${id}/topic/${t.id}` as const }))),
     [pack, id],
   );
-  usePublishScreen(screenItems);
+  usePublishScreen(screenItems, id);
 
   if (pack === undefined) return <View style={ui.screen} />;
   if (pack === null) {
@@ -185,6 +185,7 @@ export default function PackDetail() {
               <Button label={pack.percent > 0 ? `Continue: ${current.title}` : 'Start Learning'} onPress={() => router.push(`/packs/${id}/topic/${current.id}`)} />
             ) : null}
             <Button label="🤖 Ask the AI Tutor" kind="secondary" onPress={() => router.push(`/packs/${id}/tutor`)} />
+            <Button label="📝 Take Quiz" kind="secondary" onPress={() => router.push(`/packs/${id}/quiz`)} />
             {!pack.offline ? <Button label="Download for Offline" kind="secondary" onPress={() => setModal(true)} disabled={!online} /> : null}
           </View>
         </Card>

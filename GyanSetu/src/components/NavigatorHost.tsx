@@ -18,16 +18,16 @@ import type { SearchResult } from '@/navigator/types';
 import { selectOnline, useApp } from '@/stores/appStore';
 
 /** Screens where the floating button would get in the way (sign-in flows, chat, quiz). */
-const HIDDEN = [/^\/$/, /^\/login$/, /^\/signup$/, /^\/forgot-password$/, /^\/reset-password$/, /^\/ai$/, /^\/quiz\//, /^\/packs\/[^/]+\/tutor$/];
+const HIDDEN = [/^\/$/, /^\/login$/, /^\/signup$/, /^\/forgot-password$/, /^\/reset-password$/, /^\/ai$/, /^\/packs\/[^/]+\/quiz\/[^/]+$/, /^\/packs\/[^/]+\/tutor$/];
 
 function suggestionsFor(route: string): string[] {
-  if (route.startsWith('/course/') || route.startsWith('/lesson/')) {
-    return ['Start the next lesson', 'Open lesson 2', 'Show my progress', 'Practise with a quiz'];
+  if (route.startsWith('/packs/')) {
+    return ['Start the next topic', 'Open topic 2', 'Show my progress', 'Quiz me on this'];
   }
-  if (route === '/courses' || route === '/starter-bundle' || route === '/quizzes') {
-    return ['Open the first one', 'Open my DSA course', 'Continue where I left off', 'Go back'];
+  if (route === '/packs') {
+    return ['Open the first one', 'Open my DSA pack', 'Continue where I left off', 'Go back'];
   }
-  return ['Continue where I left off', 'Open my courses', 'Start my next lesson', 'Find lessons about arrays', 'Show my progress'];
+  return ['Teach me Python in 15 days', 'Continue where I left off', 'Open my learning packs', 'Show my progress', 'Career guidance'];
 }
 
 export function NavigatorHost() {
@@ -65,7 +65,7 @@ export function NavigatorHost() {
       const result = await runCommand(text, {
         route,
         screenItems: screen.items,
-        currentCourseId: screen.courseId,
+        currentPackId: screen.packId,
         authed,
       });
       if (result.navigated && !result.results && result.ok) {

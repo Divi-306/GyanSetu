@@ -344,6 +344,59 @@ export async function migrate() {
     version = 3;
   }
 
+  if (version < 4) {
+    await db.execAsync(`
+      -- Pack-native quizzes. A quiz is generated on demand (online) and only persists
+      -- here once the student taps "Save to Learning Pack"; offline-built quizzes
+      -- (sampled from lp_items) are saved the same way with source 'offline'.
+      CREATE TABLE IF NOT EXISTS lp_quizzes (
+        pack_id       TEXT NOT NULL,
+        id            TEXT NOT NULL,
+        subject       TEXT NOT NULL,
+        difficulty    TEXT NOT NULL CHECK (difficulty IN ('easy', 'medium', 'hard')),
+        topic_ids_json TEXT NOT NULL,
+        source        TEXT NOT NULL DEFAULT 'online' CHECK (source IN ('online', 'offline')),
+        pack_version  INTEGER NOT NULL,
+        created_at    TEXT NOT NULL,
+        PRIMARY KEY (pack_id, id)
+      );
+
+      CREATE TABLE IF NOT EXISTS lp_quiz_questions (
+        pack_id       TEXT NOT NULL,
+        quiz_id       TEXT NOT NULL,
+        id            TEXT NOT NULL,
+        position      INTEGER NOT NULL,
+        topic_id      TEXT NOT NULL,
+        question      TEXT NOT NULL,
+        options_json  TEXT NOT NULL,
+        correct_index INTEGER NOT NULL,
+        explanation   TEXT NOT NULL DEFAULT '',
+        difficulty    TEXT NOT NULL,
+        PRIMARY KEY (pack_id, quiz_id, id)
+      );
+      CREATE INDEX IF NOT EXISTS lp_quiz_questions_quiz_idx ON lp_quiz_questions (pack_id, quiz_id);
+
+      -- Append-only: one row per attempt. Score/weak topics are read back, never recomputed in place.
+      CREATE TABLE IF NOT EXISTS lp_quiz_attempts (
+        pack_id          TEXT NOT NULL,
+        quiz_id          TEXT NOT NULL,
+        id               TEXT NOT NULL,
+        answers_json     TEXT NOT NULL,
+        score            INTEGER NOT NULL,
+        total            INTEGER NOT NULL,
+        correct_count    INTEGER NOT NULL,
+        wrong_count      INTEGER NOT NULL,
+        weak_topics_json TEXT NOT NULL DEFAULT '[]',
+        time_taken_sec   INTEGER NOT NULL DEFAULT 0,
+        started_at       TEXT,
+        submitted_at     TEXT NOT NULL,
+        PRIMARY KEY (pack_id, quiz_id, id)
+      );
+      CREATE INDEX IF NOT EXISTS lp_quiz_attempts_pack_idx ON lp_quiz_attempts (pack_id, submitted_at);
+    `);
+    version = 4;
+  }
+
   await db.execAsync(`PRAGMA user_version = ${version}`);
 }
 

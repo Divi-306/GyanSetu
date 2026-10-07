@@ -6,7 +6,7 @@ import { StorageNotices } from '@/components/packs/StorageNotices';
 import { useLocalData } from '@/hooks/useLocalData';
 import { formatBytes, timeAgo } from '@/lib/format';
 import { deletePack } from '@/services/learningPacks';
-import { clearCachedVideos, exportPackProgress, optimizePack, storageSummary } from '@/services/storage';
+import { clearCachedVideos, devSimulateUnused, exportPackProgress, optimizePack, storageSummary } from '@/services/storage';
 
 export default function Storage() {
   const { data } = useLocalData(storageSummary);
@@ -38,6 +38,18 @@ export default function Storage() {
         },
       },
     ]);
+
+  const simulate = async (packId: string, title: string, daysAgo: number) => {
+    setBusy(`sim-${packId}`);
+    const notices = await devSimulateUnused(packId, daysAgo);
+    setBusy(null);
+    const mine = notices.filter((n) => n.packId === packId);
+    setMessage(
+      mine.length
+        ? mine.map((n) => (n.kind === 'optimized' ? `${title}: optimised, saved ${formatBytes(n.bytesSaved)}.` : `${title}: unused ${n.days} days — delete warning raised.`)).join(' ')
+        : `${title}: simulated ${daysAgo} day${daysAgo === 1 ? '' : 's'} unused — not yet eligible for compression or a delete warning.`,
+    );
+  };
 
   const remove = (packId: string, title: string, ownVideos: number) =>
     Alert.alert(
@@ -106,6 +118,24 @@ export default function Storage() {
               </View>
             </Pressable>
             <Button label="Delete" kind="danger" onPress={() => remove(p.packId, p.title, p.ownVideos)} style={s.delete} />
+            {__DEV__ ? (
+              <View style={s.devPanel}>
+                <Text style={s.devLabel}>DEV: simulate unused for</Text>
+                <View style={s.devRow}>
+                  {[1, 7, 30].map((d) => (
+                    <Button
+                      key={d}
+                      label={`${d}d ago`}
+                      kind="ghost"
+                      onPress={() => simulate(p.packId, p.title, d)}
+                      busy={busy === `sim-${p.packId}`}
+                      disabled={!!busy}
+                      style={s.devButton}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
           </Card>
         ))}
         <Text style={[ui.muted, s.footer]}>
@@ -131,4 +161,8 @@ const s = StyleSheet.create({
   badges: { alignItems: 'flex-end' },
   delete: { minHeight: 38, marginTop: 10 },
   footer: { marginTop: 8 },
+  devPanel: { marginTop: 10, borderTopWidth: 1, borderTopColor: '#EEF0EC', paddingTop: 10 },
+  devLabel: { fontSize: 11, fontWeight: '700', color: C.muted, marginBottom: 6 },
+  devRow: { flexDirection: 'row', gap: 6 },
+  devButton: { minHeight: 36, paddingHorizontal: 10, flex: 1 },
 });

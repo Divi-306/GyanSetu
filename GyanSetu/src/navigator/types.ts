@@ -10,11 +10,15 @@ export const NAV_ACTION_NAMES = [
   'START_NEXT_LESSON',
   'CONTINUE_LEARNING',
   'SHOW_PROGRESS',
+  'LEARN_SUBJECT',
+  'OPEN_LEARNING_PACKS',
+  'OPEN_CAREER',
+  'OPEN_STORAGE',
+  'OPEN_REMINDERS',
   'OPEN_QUIZ',
   'OPEN_PROFILE',
   'EDIT_PROFILE',
   'OPEN_SETTINGS',
-  'OPEN_STARTER_BUNDLE',
   'OPEN_AI_TUTOR',
   'OPEN_SCHOLARSHIPS',
   'OPEN_OFFLINE_HUB',
@@ -42,8 +46,8 @@ export type ScreenItem = { title: string; href: Href };
 export type NavContext = {
   route: string;
   screenItems: ScreenItem[];
-  /** Course shown on the current screen (course details or a lesson of it). */
-  currentCourseId: string | null;
+  /** Learning pack shown on the current screen. */
+  currentPackId: string | null;
   authed: boolean;
 };
 
@@ -55,7 +59,7 @@ export type NavOutcome = {
   navigated: boolean;
   /** False stops a multi-step command (the step failed or needs the student). */
   ok: boolean;
-  /** Course the step ended on, so a following step like "start the next lesson" uses it. */
-  courseId?: string | null;
+  /** Pack the step ended on, so a following step like "start the next lesson" uses it. */
+  packId?: string | null;
   results?: SearchResult[];
 };

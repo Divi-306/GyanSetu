@@ -9,12 +9,21 @@ import {
 import { router } from 'expo-router';
 import { useLocalData } from '@/hooks/useLocalData';
 import { goBackOr } from '@/lib/nav';
-import { getContinueLearning } from '@/services/learning';
+import { getPackDetail, listMyPacks } from '@/services/learningPacks';
 import { selectOnline, useApp } from '@/stores/appStore';
+
+async function loadResume() {
+  const packs = (await listMyPacks()).filter((p) => p.onDevice);
+  if (!packs.length) return null;
+  const pack = packs[0];
+  const detail = await getPackDetail(pack.packId);
+  const topic = detail?.resumeTopicId ? detail.modules.flatMap((m) => m.topics).find((t) => t.id === detail.resumeTopicId) : null;
+  return { packId: pack.packId, icon: pack.icon, title: pack.title, percent: pack.percent, topicId: topic?.id ?? null, topicTitle: topic?.title ?? null };
+}
 
 export default function Offline() {
   const online = useApp(selectOnline);
-  const { data: resume } = useLocalData(getContinueLearning);
+  const { data: resume } = useLocalData(loadResume);
   const onBack = () => goBackOr('/dashboard');
   const percent = resume?.percent ?? 0;
   return (
@@ -62,11 +71,11 @@ export default function Offline() {
 
           <View style={styles.welcomeContent}>
             <Text style={styles.welcomeTitle}>
-              Starter Learning Pack
+              Offline Learning Packs
             </Text>
 
             <Text style={styles.welcomeDescription}>
-              Your downloaded learning material is
+              Your downloaded learning packs are
               available even without internet.
             </Text>
           </View>
@@ -78,11 +87,11 @@ export default function Offline() {
           <View style={styles.packHeader}>
             <View>
               <Text style={styles.packTitle}>
-                {resume?.title ?? 'Starter Bundle'}
+                {resume?.title ?? 'No pack downloaded yet'}
               </Text>
 
               <Text style={styles.packSubtitle}>
-                {resume ? 'Your current course' : 'Sample lessons from 5 subjects'}
+                {resume ? 'Your current learning pack' : 'Create a learning pack to study offline'}
               </Text>
             </View>
 
@@ -110,7 +119,7 @@ export default function Offline() {
           </View>
 
           <Text style={styles.packInfo}>
-            Lessons • Quizzes • Offline AI
+            Topics • Quizzes • Offline AI Tutor
           </Text>
         </View>
 
@@ -122,21 +131,21 @@ export default function Offline() {
         <Pressable
           style={styles.lessonCard}
           onPress={() =>
-            resume?.lastLessonId
-              ? router.push(`/lesson/${resume.lastLessonId}`)
-              : router.push(resume ? `/course/${resume.courseId}` : '/starter-bundle')
+            resume
+              ? router.push(resume.topicId ? `/packs/${resume.packId}/topic/${resume.topicId}` : `/packs/${resume.packId}`)
+              : router.push('/learn')
           }
         >
 
           <View style={styles.numberCircle}>
             <Text style={styles.numberText}>
-              {resume?.icon ?? '1'}
+              {resume?.icon ?? '✨'}
             </Text>
           </View>
 
           <View style={styles.lessonContent}>
             <Text style={styles.lessonTitle}>
-              {resume?.lastLessonTitle ?? (resume ? resume.title : 'Open the Starter Bundle')}
+              {resume ? (resume.topicTitle ?? resume.title) : 'Create a learning pack'}
             </Text>
 
             <Text style={styles.lessonSubtitle}>
@@ -157,7 +166,7 @@ export default function Offline() {
 
         <View style={styles.featureGrid}>
 
-          <Pressable style={styles.featureCard} onPress={() => router.push('/courses')}>
+          <Pressable style={styles.featureCard} onPress={() => router.push('/packs')}>
             <View style={styles.featureIcon}>
               <Text style={styles.featureIconText}>
                 📖
@@ -165,15 +174,15 @@ export default function Offline() {
             </View>
 
             <Text style={styles.featureTitle}>
-              Lessons
+              Learning Packs
             </Text>
 
             <Text style={styles.featureSubtitle}>
-              Read downloaded lessons
+              Read downloaded topics
             </Text>
           </Pressable>
 
-          <Pressable style={styles.featureCard} onPress={() => router.push('/quizzes')}>
+          <Pressable style={styles.featureCard} onPress={() => router.push(resume ? `/packs/${resume.packId}/quiz` : '/packs')}>
             <View style={styles.featureIcon}>
               <Text style={styles.featureIconText}>
                 ✓

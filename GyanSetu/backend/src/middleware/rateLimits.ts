@@ -1,4 +1,5 @@
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
+import { env } from '../config/env';
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -37,10 +38,10 @@ export const navigatorLimiter = rateLimit({
   message: { error: { code: 'RATE_LIMITED', message: 'Too many navigator commands. Try again in a few minutes.' } },
 });
 
-// Generating a learning pack costs a dozen long model calls: a tight daily budget per student.
+// Generating a learning pack costs a dozen long model calls: a daily budget per student.
 export const packGenerationLimiter = rateLimit({
   windowMs: 24 * 60 * 60 * 1000,
-  limit: 10,
+  limit: env.PACK_GENERATION_DAILY_LIMIT,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.id ?? 'anonymous',

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { StorageNotices } from '@/components/packs/StorageNotices';
 import { ProgressBar } from '@/components/packs/ui';
@@ -8,7 +8,6 @@ import { greeting } from '@/lib/dates';
 import { formatBytes } from '@/lib/format';
 import { getProgressOverview } from '@/services/analytics';
 import { cachedCareer } from '@/services/career';
-import { getContinueLearning } from '@/services/learning';
 import { listMyPacks } from '@/services/learningPacks';
 import { inactivityNudge } from '@/services/reminders';
 import { storageSummary } from '@/services/storage';
@@ -17,15 +16,14 @@ import { formatDuration } from '@/tutor/progress';
 
 /** Everything on the home screen, read locally: the dashboard works fully offline. */
 async function loadDashboard() {
-  const [overview, packs, course, career, nudge, storage] = await Promise.all([
+  const [overview, packs, career, nudge, storage] = await Promise.all([
     getProgressOverview(),
     listMyPacks(),
-    getContinueLearning(),
     cachedCareer(),
     inactivityNudge(),
     storageSummary(),
   ]);
-  return { overview, packs, course, career, nudge, storage };
+  return { overview, packs, career, nudge, storage };
 }
 
 export default function Dashboard() {
@@ -35,6 +33,12 @@ export default function Dashboard() {
   const pending = useApp((s) => s.pendingSyncCount);
   const syncing = useApp((s) => s.syncing);
   const { data } = useLocalData(loadDashboard);
+  const [subject, setSubject] = useState('');
+  const startLearning = () => {
+    const s = subject.trim();
+    router.push(s ? { pathname: '/learn', params: { subject: s } } : '/learn');
+    setSubject('');
+  };
 
   const name = user?.name?.trim() ? user.name.split(' ')[0] : null;
   const statusText = syncing
@@ -50,7 +54,6 @@ export default function Dashboard() {
         : 'Your learning continues without internet.';
 
   const current = data?.overview.current ?? null;
-  const course = data?.course ?? null;
   const streak = data?.overview.streaks;
   const topPath = data?.career?.guidance?.paths[0] ?? null;
   const recommended = [
@@ -60,8 +63,6 @@ export default function Dashboard() {
 
   const continueLearning = () => {
     if (current) router.push(current.topicId ? `/packs/${current.packId}/topic/${current.topicId}` : `/packs/${current.packId}`);
-    else if (course?.lastLessonId) router.push(`/lesson/${course.lastLessonId}`);
-    else if (course) router.push(`/course/${course.courseId}`);
     else router.push('/learn');
   };
 
@@ -85,6 +86,29 @@ export default function Dashboard() {
           <Text style={styles.statusText}>{statusText}</Text>
         </TouchableOpacity>
 
+        {/* Learn anything: the main way in, so it sits at the top. */}
+        <View style={styles.learnCard}>
+          <Text style={styles.learnTitle}>✨ What do you want to learn?</Text>
+          <Text style={styles.learnSub}>Any subject — the AI builds a day-by-day learning pack you can use offline.</Text>
+          <TextInput
+            value={subject}
+            onChangeText={setSubject}
+            placeholder='e.g. "Python in 15 days" or "Computer Networks"'
+            placeholderTextColor="#98A29A"
+            style={styles.learnInput}
+            returnKeyType="go"
+            onSubmitEditing={startLearning}
+            editable={online}
+          />
+          <TouchableOpacity style={[styles.learnButton, !online && styles.learnButtonOff]} onPress={startLearning} disabled={!online} activeOpacity={0.85}>
+            <Text style={styles.learnButtonText}>Create learning pack →</Text>
+          </TouchableOpacity>
+          {!online ? <Text style={styles.learnSub}>Needs internet. Your downloaded packs below still work offline.</Text> : null}
+          <Pressable onPress={() => router.push('/packs')}>
+            <Text style={styles.link}>My Learning Packs ({data?.packs.length ?? 0}) →</Text>
+          </Pressable>
+        </View>
+
         <StorageNotices />
 
         {data?.nudge ? (
@@ -103,27 +127,25 @@ export default function Dashboard() {
         <Text style={styles.sectionTitle}>Continue Learning</Text>
         <Pressable style={styles.card} onPress={continueLearning}>
           <Text style={styles.cardTitle}>
-            {current ? `${current.icon} ${current.title}` : course ? `${course.icon ?? '📚'} ${course.title}` : '✨ Learn anything'}
+            {current ? `${current.icon} ${current.title}` : '✨ Learn anything'}
           </Text>
           <Text style={styles.muted}>
             {current
               ? current.durationDays && current.dayNumber
                 ? `Day ${current.dayNumber} / ${current.durationDays}${current.topicTitle ? ` · ${current.topicTitle}` : ''}`
                 : current.topicTitle ?? 'Continue where you left off'
-              : course
-                ? course.lastLessonTitle ?? 'Continue where you left off'
-                : 'Type any subject and choose how many days'}
+              : 'Type any subject and choose how many days'}
           </Text>
-          {current || course ? (
+          {current ? (
             <View style={styles.progressRow}>
               <View style={styles.flex}>
-                <ProgressBar value={(current?.percent ?? course?.percent ?? 0) / 100} />
+                <ProgressBar value={(current?.percent ?? 0) / 100} />
               </View>
-              <Text style={styles.percent}>{current?.percent ?? course?.percent ?? 0}%</Text>
+              <Text style={styles.percent}>{current?.percent ?? 0}%</Text>
             </View>
           ) : null}
           <View style={styles.button}>
-            <Text style={styles.buttonText}>{current || course ? 'Continue' : 'Start'}</Text>
+            <Text style={styles.buttonText}>{current ? 'Continue' : 'Start'}</Text>
           </View>
         </Pressable>
 
@@ -199,9 +221,7 @@ export default function Dashboard() {
         <Text style={styles.sectionTitle}>More</Text>
         <View style={styles.quick}>
           <Quick icon="🤖" label="Ask AI" onPress={() => router.push('/ai')} />
-          <Quick icon="📝" label="Quizzes" onPress={() => router.push('/quizzes')} />
           <Quick icon="🎓" label="Scholarships" onPress={() => router.push('/scholarships')} />
-          <Quick icon="📖" label="Classic courses" onPress={() => router.push('/courses')} />
         </View>
 
         {isGuest ? (
@@ -244,6 +264,16 @@ const styles = StyleSheet.create({
   status: { backgroundColor: '#F1F6ED', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#DCE7D6' },
   statusTitle: { fontSize: 14, fontWeight: '700', color: '#20352A', marginBottom: 2 },
   statusText: { fontSize: 12, color: '#66756A' },
+  learnCard: { backgroundColor: '#EAF3E9', borderRadius: 18, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#D2E3D0' },
+  learnTitle: { fontSize: 18, fontWeight: '800', color: '#20352A', marginBottom: 4 },
+  learnSub: { fontSize: 12, color: '#66756A', lineHeight: 18, marginBottom: 8 },
+  learnInput: {
+    backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#D5DED1', borderRadius: 12,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#20352A', marginBottom: 10,
+  },
+  learnButton: { backgroundColor: '#5F8068', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginBottom: 6 },
+  learnButtonOff: { opacity: 0.5 },
+  learnButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   nudge: { backgroundColor: '#FFF8E8', borderRadius: 16, padding: 14, marginBottom: 16, borderWidth: 1, borderColor: '#F1E2BC' },
   nudgeTitle: { fontSize: 15, fontWeight: '700', color: '#5C4210', marginBottom: 4 },
   nudgeText: { fontSize: 14, lineHeight: 20, color: '#4A564C' },
