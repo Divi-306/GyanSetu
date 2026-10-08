@@ -38,19 +38,37 @@ const EnvSchema = z.object({
 
   // Short educational videos for learning packs. Wikimedia Commons needs no key (public-domain /
   // CC files, downloadable). YouTube is used only with a key, and is stream-only (its terms forbid downloads).
-  // How many module-writing AI calls run at once per pack. Each call can use several
-  // thousand tokens; a low value avoids the calls competing for the same per-minute token
-  // budget (which free/low-tier keys often cap in the low thousands) and failing together.
-  // Raise this only if your AI provider key has a generous tokens-per-minute limit.
-  PACK_MODULE_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(1),
+  // How many topic-writing AI calls run in parallel across all pack generation. Each call is
+  // capped at GROQ_BACKGROUND_MAX_TOKENS_PER_REQUEST below, so 2 in flight together stays
+  // under a typical 8,000 TPM budget with headroom to spare. Lower to 1 for the safest
+  // behaviour on an unknown/low-tier key, at the cost of slower generation.
+  PACK_MODULE_CONCURRENCY: z.coerce.number().int().min(1).max(10).default(2),
   // Hard ceiling on tokens requested per Groq call, regardless of what the caller asked for.
-  // Groq's per-minute token budget is one account-wide number shared by every model, and it
-  // rejects a request outright the instant ITS OWN requested max tokens exceeds that budget —
-  // before any work happens — so asking for more than the account has, ever, always fails.
-  // Default (6000) leaves headroom under a typical free/low-tier 8,000 TPM cap for the prompt
-  // itself, which also counts against the same budget. Raise this only if your Groq key's
-  // tier has a higher tokens-per-minute limit (check the x-ratelimit-limit-tokens response header).
+  // Verified empirically against a real key (2026-10-08): Groq's per-minute token budget is
+  // a single account-wide ROLLING-WINDOW number shared by every model (this key: 8,000 TPM,
+  // from x-ratelimit-limit-tokens), consumed by ACTUAL usage — but before running a request,
+  // it checks that request's OWN asked-for max tokens against whatever is CURRENTLY
+  // remaining and rejects with 429 if the ask alone exceeds the remainder, even if the real
+  // usage would have fit. A lower cap doesn't guarantee admission, but shrinks each call's
+  // "ask" so it fits a smaller remaining window more often. Raise this only if your Groq
+  // key's own x-ratelimit-limit-tokens header is comfortably higher.
   GROQ_MAX_TOKENS_PER_REQUEST: z.coerce.number().int().min(500).default(6000),
+  // Tighter cap for background work (pack/topic generation, video picks) specifically — the
+  // student isn't directly waiting on these the way they are on a tutor reply or a Navigator
+  // command. A pack generates over several minutes and many calls; if each one used the full
+  // interactive cap above, it would consume the ENTIRE shared per-minute budget for that whole
+  // time, and every other AI feature (tutor, Career Guidance, quiz) would correctly but
+  // unhelpfully report "busy" until generation finished. Reserving headroom here lets
+  // interactive calls still succeed while a pack generates in the background.
+  GROQ_BACKGROUND_MAX_TOKENS_PER_REQUEST: z.coerce.number().int().min(500).default(3000),
+  // Minimum gap enforced between consecutive background AI calls (pack/topic generation),
+  // even when neither was rate-limited. Verified empirically against a real Groq key: its
+  // per-minute budget is a rolling window of ACTUAL usage, and firing background calls
+  // back-to-back as fast as the network allows keeps that window's remaining budget too
+  // low, too often, for an interactive request (tutor, Navigator, quiz) to be admitted when
+  // it happens to arrive in that moment. Spacing background calls out lowers their average
+  // consumption rate, leaving the window free more of the time for interactive traffic.
+  PACK_GENERATION_MIN_GAP_MS: z.coerce.number().int().min(0).default(1500),
   // Learning packs cost several AI calls each; this caps it per student per day.
   PACK_GENERATION_DAILY_LIMIT: z.coerce.number().int().min(1).default(30),
   VIDEO_SOURCES: z.string().default('wikimedia,youtube'),

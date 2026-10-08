@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { pool } from '../../db/pool';
 import { requireAuth } from '../../middleware/auth';
 import { aiLimiter } from '../../middleware/rateLimits';
-import { getGuidance, refreshGuidance, roadmapFor } from './guidance.service';
+import { createTask, runInBackground } from '../tasks/taskManager';
+import { checkGuidanceCache, generateGuidance, getGuidance, roadmapFor } from './guidance.service';
 
 export const careerRouter = Router();
 careerRouter.use(requireAuth);
@@ -14,9 +15,20 @@ careerRouter.get('/guidance', async (req, res) => {
 });
 
 // ── POST /v1/career/guidance/refresh : regenerate when the learning evidence changed ──
+// The cache check is fast (DB only) and answered inline. Actual generation is two AI
+// calls that can take a while and don't need the student watching a spinner for, so
+// that part runs as a background task — the student keeps using the tutor/navigator
+// while it finishes, and polls /v1/tasks/:id (or GET /v1/career/guidance again) for it.
 careerRouter.post('/guidance/refresh', aiLimiter, async (req, res) => {
   const { force } = z.object({ force: z.boolean().default(false) }).parse(req.body ?? {});
-  res.json(await refreshGuidance(req.user!.id, force));
+  const userId = req.user!.id;
+  const check = await checkGuidanceCache(userId, force);
+  if (check.kind === 'insufficient_data') return res.json({ status: 'insufficient_data', guidance: null, generatedAt: null, outdated: false });
+  if (check.kind === 'ready') return res.json({ status: 'ready', guidance: check.guidance, generatedAt: check.generatedAt, outdated: false });
+
+  const task = await createTask(userId, 'CAREER_GUIDANCE', {});
+  runInBackground(task, () => generateGuidance(userId, check.evidence, check.hash));
+  res.status(202).json({ status: 'generating', taskId: task.id });
 });
 
 // ── POST /v1/career/roadmap : roadmap for one recommended path ──

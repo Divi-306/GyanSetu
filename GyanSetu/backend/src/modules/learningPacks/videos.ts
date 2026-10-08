@@ -146,6 +146,9 @@ export async function findVideos(outline: Outline): Promise<Map<string, Video[]>
       schema: VIDEO_PICKS_JSON_SCHEMA,
       schemaName: 'video_picks',
       maxTokens: 3000,
+      // Runs in the background after pack generation already finished writing content;
+      // leaves headroom in the shared per-minute token budget for interactive AI features.
+      priority: 'background',
     });
     if (result.kind !== 'json') return out;
     const parsed = VideoPicksReply.safeParse(JSON.parse(result.text));

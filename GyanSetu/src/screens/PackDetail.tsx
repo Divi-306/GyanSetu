@@ -18,7 +18,7 @@ import {
   usePackDownloads,
   type Insights,
 } from '@/services/learningPacks';
-import { exportPackProgress, optimizePack, restorePack } from '@/services/storage';
+import { exportPackProgress, optimizePack, restorePack, sharePackFile } from '@/services/storage';
 import { downloadVideo } from '@/services/videos';
 import { selectOnline, useApp } from '@/stores/appStore';
 import { MODULE_ICON, formatDuration } from '@/tutor/progress';
@@ -84,6 +84,18 @@ export default function PackDetail() {
 
   const exportProgress = async () => {
     await Share.share({ title: `${pack.title} — my progress`, message: await exportPackProgress(id) });
+  };
+
+  const downloadFile = async () => {
+    setStorageBusy('download');
+    setError(null);
+    try {
+      await sharePackFile(id);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setStorageBusy(null);
+    }
   };
 
   const optimize = async () => {
@@ -372,6 +384,7 @@ export default function PackDetail() {
             ) : (
               <Button label="Compress pack" kind="secondary" onPress={optimize} disabled={!!storageBusy} busy={storageBusy === 'optimize'} />
             )}
+            <Button label="Download pack as file" kind="secondary" onPress={downloadFile} disabled={!!storageBusy} busy={storageBusy === 'download'} />
             <Button label="Export my progress" kind="ghost" onPress={exportProgress} />
           </View>
         </Card>

@@ -153,16 +153,26 @@ export async function getGuidance(userId: string) {
 
 const FRESH_MS = 24 * 3600 * 1000;
 
-/** Regenerates guidance (and the roadmap for the best path) when the evidence changed, or on `force`. */
-export async function refreshGuidance(userId: string, force = false) {
+type CacheCheck =
+  | { kind: 'ready'; guidance: CareerGuidance; generatedAt: Date }
+  | { kind: 'insufficient_data' }
+  | { kind: 'needs_generation'; evidence: Record<string, unknown>; hash: string };
+
+/** The fast, no-AI-call part: is there already a fresh-enough cached answer? Safe to run inline in a request. */
+async function checkCache(userId: string, force: boolean): Promise<CacheCheck> {
   const e = await learningEvidence(userId);
-  if (!enoughData(e)) return { status: 'insufficient_data' as const, guidance: null, generatedAt: null, outdated: false };
+  if (!enoughData(e)) return { kind: 'insufficient_data' };
   const evidence = promptEvidence(e);
   const hash = hashOf(evidence);
   const cached = await queryOne<Stored>('SELECT guidance, evidence_hash, generated_at FROM career_guidance WHERE user_id = $1', [userId]);
   if (cached && cached.evidence_hash === hash && (!force || Date.now() - cached.generated_at.getTime() < FRESH_MS)) {
-    return { status: 'ready' as const, guidance: cached.guidance, generatedAt: cached.generated_at, outdated: false };
+    return { kind: 'ready', guidance: cached.guidance, generatedAt: cached.generated_at };
   }
+  return { kind: 'needs_generation', evidence, hash };
+}
+
+/** The slow, AI-calling part (two model calls) — the part worth running in the background. */
+async function generate(userId: string, evidence: Record<string, unknown>, hash: string) {
   if (!aiConfigured()) throw new HttpError(503, 'AI_NOT_CONFIGURED', 'Online AI is not available right now');
 
   const result = await complete({
@@ -189,6 +199,20 @@ export async function refreshGuidance(userId: string, force = false) {
   );
   return { status: 'ready' as const, guidance, generatedAt: rows[0].generated_at, outdated: false };
 }
+
+/**
+ * Regenerates guidance (and the roadmap for the best path) when the evidence changed, or
+ * on `force`. Kept for callers that are fine blocking (tests, scripts); the HTTP route
+ * uses `checkCache` + `generate` separately so it can background only the slow part.
+ */
+export async function refreshGuidance(userId: string, force = false) {
+  const check = await checkCache(userId, force);
+  if (check.kind === 'insufficient_data') return { status: 'insufficient_data' as const, guidance: null, generatedAt: null, outdated: false };
+  if (check.kind === 'ready') return { status: 'ready' as const, guidance: check.guidance, generatedAt: check.generatedAt, outdated: false };
+  return generate(userId, check.evidence, check.hash);
+}
+
+export { checkCache as checkGuidanceCache, generate as generateGuidance };
 
 /** Roadmap for any recommended path (cached with the guidance). */
 export async function roadmapFor(userId: string, pathTitle: string) {

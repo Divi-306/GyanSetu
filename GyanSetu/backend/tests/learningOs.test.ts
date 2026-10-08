@@ -6,6 +6,7 @@ import { pool } from '../src/db/pool';
 import { fallbackPlan, waitForGeneration } from '../src/modules/learningPacks/generator';
 import type { Outline } from '../src/modules/learningPacks/pack.schema';
 import { applyPlan, honestCoverage } from '../src/modules/learningPacks/plan';
+import { waitForTask } from '../src/modules/tasks/taskManager';
 import { isoDurationToSec, pickBest } from '../src/modules/learningPacks/videos';
 import { app, bearer, signupUser } from './helpers';
 
@@ -283,9 +284,12 @@ describe('career guidance', () => {
     );
     const calls = stub();
     const res = await request(app).post('/v1/career/guidance/refresh').set(bearer(accessToken)).send({});
-    expect(res.status).toBe(200);
-    expect(res.body.status).toBe('ready');
-    const g = res.body.guidance;
+    expect(res.status).toBe(202);
+    expect(res.body.status).toBe('generating');
+    await waitForTask(res.body.taskId);
+    const ready = await request(app).get('/v1/career/guidance').set(bearer(accessToken));
+    expect(ready.body.status).toBe('ready');
+    const g = ready.body.guidance;
     expect(g.paths.map((p: any) => p.title)).toEqual(['Data Analyst', 'Backend Developer']); // sorted by match
     expect(g.paths[0].match).toBe(100); // clamped
     expect(g.paths[0].nextPacks[0].durationDays).toBe(60); // clamped

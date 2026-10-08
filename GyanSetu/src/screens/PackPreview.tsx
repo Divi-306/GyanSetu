@@ -16,6 +16,7 @@ import {
   type RemotePack,
   type VersionStatus,
 } from '@/services/learningPacks';
+import { sharePackFile } from '@/services/storage';
 import { selectOnline, useApp } from '@/stores/appStore';
 
 const POLL_MS = 4000;
@@ -31,6 +32,8 @@ export default function PackPreview() {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [fileBusy, setFileBusy] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [openModule, setOpenModule] = useState<string | null>(null);
   const { data: local } = useLocalData(() => getPackDetail(id), id);
 
@@ -100,6 +103,18 @@ export default function PackPreview() {
     }
   };
 
+  const downloadFile = async () => {
+    setFileBusy(true);
+    setFileError(null);
+    try {
+      await sharePackFile(id);
+    } catch (err) {
+      setFileError(errorMessage(err));
+    } finally {
+      setFileBusy(false);
+    }
+  };
+
   const retry = async () => {
     if (!version) return;
     try {
@@ -166,6 +181,7 @@ export default function PackPreview() {
           ) : null}
 
           {downloadError ? <Text style={ui.error}>{downloadError}</Text> : null}
+          {fileError ? <Text style={ui.error}>{fileError}</Text> : null}
 
           {ready ? (
             <View style={s.actions}>
@@ -175,6 +191,9 @@ export default function PackPreview() {
               ) : (
                 <Button label="Download for Offline" kind="secondary" onPress={() => setModal(true)} disabled={!online} />
               )}
+              {local ? (
+                <Button label="Download pack as file" kind="ghost" onPress={downloadFile} busy={fileBusy} />
+              ) : null}
             </View>
           ) : null}
         </Card>

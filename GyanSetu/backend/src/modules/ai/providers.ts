@@ -16,6 +16,14 @@ export type CompletionRequest = {
   model?: string;
   /** Request timeout. Long generations (learning packs) need more than the tutor's 60 s. */
   timeoutMs?: number;
+  /**
+   * 'background' (default 'interactive') for bulk, non-interactive work the student isn't
+   * directly waiting on right now — pack/topic generation, video picks. These calls are
+   * capped more tightly (see OpenAiCompatible.backgroundTokenCap) so a multi-minute pack
+   * generation can't consume the account's entire shared per-minute token budget and starve
+   * interactive calls (tutor, Navigator, quiz) that arrive while it's still running.
+   */
+  priority?: 'interactive' | 'background';
 };
 
 export type CompletionResult =
@@ -53,16 +61,27 @@ type OpenAiCompatible = {
   maxTokensField: string;
   /**
    * Hard ceiling on the requested token field, regardless of what the caller asked for.
-   * Groq's per-minute token budget is a single account-wide number shared by every
-   * model (this key: 8,000 — confirmed from Groq's own x-ratelimit-limit-tokens header,
-   * same for gpt-oss-120b, gpt-oss-20b and qwen). Groq rejects a request outright
-   * (413 rate_limit_exceeded) the instant its OWN requested max tokens exceeds that
-   * budget — before any work happens — so asking for 16,000 (a full module) or 8,000
-   * (a 20-question quiz) always fails, no matter how many times it's retried. Clamping
-   * here leaves ~2,000 tokens of headroom for the prompt itself, which also counts
-   * against the same budget.
+   * Verified empirically against a real key (2026-10-08): Groq's per-minute token budget
+   * is a single account-wide ROLLING-WINDOW number shared by every model (this key:
+   * 8,000 TPM, from x-ratelimit-limit-tokens). It is consumed by ACTUAL usage, not by
+   * what a request asks for — a request for 16,000 tokens that only needs 100 succeeds
+   * fine. But before running a request, Groq checks the request's OWN requested max
+   * tokens against whatever is CURRENTLY remaining in the window and rejects with 429
+   * ("... TPM: Limit 8000, Used X, Requested Y") if the ask alone exceeds the remainder
+   * — even though the eventual real usage might have fit. So a lower cap here doesn't
+   * guarantee admission, but it shrinks each call's "ask," which makes it fit into a
+   * smaller remaining window more often and leaves more of the budget available for
+   * other concurrent calls.
    */
   tokenCap?: number;
+  /**
+   * Tighter cap for `priority: 'background'` calls. A multi-minute pack generation makes
+   * many of these calls in a row; capping each one's requested size lower leaves more of
+   * the same rolling window free for an interactive call (tutor, Navigator, quiz) that
+   * arrives while generation is still running, instead of it being turned away because
+   * the background job's own next call already claimed the remaining headroom.
+   */
+  backgroundTokenCap?: number;
 };
 
 const GROQ: OpenAiCompatible = {
@@ -77,6 +96,7 @@ const GROQ: OpenAiCompatible = {
   extra: { max_completion_tokens: 4000, reasoning_effort: 'low', include_reasoning: false },
   maxTokensField: 'max_completion_tokens',
   tokenCap: env.GROQ_MAX_TOKENS_PER_REQUEST,
+  backgroundTokenCap: env.GROQ_BACKGROUND_MAX_TOKENS_PER_REQUEST,
 };
 
 const XAI: OpenAiCompatible = {
@@ -91,10 +111,11 @@ const XAI: OpenAiCompatible = {
 
 async function completeOpenAiCompatible(p: OpenAiCompatible, req: CompletionRequest): Promise<CompletionResult> {
   const model = req.model ?? env.AI_MODEL ?? p.defaultModel;
+  const cap = req.priority === 'background' && p.backgroundTokenCap ? p.backgroundTokenCap : p.tokenCap;
   const requestedTokens = req.maxTokens ?? (p.extra[p.maxTokensField] as number | undefined);
-  const effectiveTokens = p.tokenCap && requestedTokens ? Math.min(requestedTokens, p.tokenCap) : requestedTokens;
-  if (p.tokenCap && requestedTokens && requestedTokens > p.tokenCap) {
-    logger.warn({ provider: p.name, requestedTokens, tokenCap: p.tokenCap }, 'clamped AI request to the account token budget');
+  const effectiveTokens = cap && requestedTokens ? Math.min(requestedTokens, cap) : requestedTokens;
+  if (cap && requestedTokens && requestedTokens > cap) {
+    logger.warn({ provider: p.name, priority: req.priority ?? 'interactive', requestedTokens, cap }, 'clamped AI request to the account token budget');
   }
   let res: Response;
   try {

@@ -1,9 +1,11 @@
 import * as Crypto from 'expo-crypto';
 import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import { gunzipSync, gzipSync, strFromU8, strToU8 } from 'fflate';
 import { db, kvDelete, kvGet, kvSet } from '@/db';
 import { daysBetween, localDay } from '@/lib/dates';
 import { selectOnline, useApp } from '@/stores/appStore';
+import type { Flashcard, Mcq, Practice, TopicContent, Viva } from '@/tutor/types';
 import { changed, deleteFileQuietly } from './learningPacks';
 import { downloadVideo } from './videos';
 
@@ -316,4 +318,131 @@ export async function exportPackProgress(packId: string) {
     null,
     2,
   );
+}
+
+// ─────────────────────────── Download a pack as a file ───────────────────────────
+// Reads whatever is CURRENTLY downloaded locally for this pack — a freshly generated
+// pack, or one just updated to a new version — so the file always matches what's on
+// the phone right now, never a stale earlier version.
+
+const mcqLetter = (i: number) => String.fromCharCode(65 + i);
+
+/** The full content of one downloaded pack (lessons, examples, quizzes), as readable Markdown. */
+export async function exportPackContent(packId: string): Promise<string> {
+  const pack = await db.getFirstAsync<{ title: string; subject: string; description: string; version: number; level_from: string; level_to: string; plan_json: string | null }>(
+    'SELECT title, subject, description, version, level_from, level_to, plan_json FROM lp_packs WHERE pack_id = ?',
+    packId,
+  );
+  if (!pack) throw new Error('This pack is not downloaded on this phone.');
+  const modules = await db.getAllAsync<{ id: string; position: number; title: string; description: string }>(
+    'SELECT id, position, title, description FROM lp_modules WHERE pack_id = ? ORDER BY position',
+    packId,
+  );
+  const topics = await db.getAllAsync<{ id: string; module_id: string; position: number; title: string; content_json: string }>(
+    'SELECT id, module_id, position, title, content_json FROM lp_topics WHERE pack_id = ? ORDER BY position',
+    packId,
+  );
+  const items = await db.getAllAsync<{ topic_id: string; kind: string; payload_json: string }>(
+    "SELECT topic_id, kind, payload_json FROM lp_items WHERE pack_id = ? AND source = 'pack' ORDER BY topic_id",
+    packId,
+  );
+  const byTopic = new Map<string, { mcqs: Mcq[]; viva: Viva[]; practice: Practice[]; flashcards: Flashcard[] }>();
+  const bucket = (topicId: string) => {
+    let b = byTopic.get(topicId);
+    if (!b) {
+      b = { mcqs: [], viva: [], practice: [], flashcards: [] };
+      byTopic.set(topicId, b);
+    }
+    return b;
+  };
+  for (const row of items) {
+    const payload = JSON.parse(row.payload_json);
+    if (row.kind === 'mcq') bucket(row.topic_id).mcqs.push(payload);
+    else if (row.kind === 'viva') bucket(row.topic_id).viva.push(payload);
+    else if (row.kind === 'practice') bucket(row.topic_id).practice.push(payload);
+    else if (row.kind === 'flashcard') bucket(row.topic_id).flashcards.push(payload);
+  }
+
+  const lines: string[] = [];
+  lines.push(`# ${pack.title}`, '');
+  if (pack.subject && pack.subject !== pack.title) lines.push(`*${pack.subject}*`, '');
+  if (pack.description) lines.push(pack.description, '');
+  lines.push(`Level: ${pack.level_from}${pack.level_to && pack.level_to !== pack.level_from ? ` → ${pack.level_to}` : ''} · Version ${pack.version}`, '');
+  if (pack.plan_json) {
+    try {
+      const plan = JSON.parse(pack.plan_json) as { coverageStatement?: string; outcomes?: string[] };
+      if (plan.coverageStatement) lines.push(plan.coverageStatement, '');
+      if (plan.outcomes?.length) lines.push('**By the end you can:**', ...plan.outcomes.map((o) => `- ${o}`), '');
+    } catch {
+      // ignore malformed plan metadata, the rest of the export still matters
+    }
+  }
+  lines.push('---', '');
+
+  for (const m of modules) {
+    lines.push(`## ${m.position}. ${m.title}`, '');
+    if (m.description) lines.push(m.description, '');
+    for (const t of topics.filter((x) => x.module_id === m.id)) {
+      const content = JSON.parse(t.content_json) as TopicContent;
+      lines.push(`### ${t.title}`, '');
+      if (content.explanation) lines.push(content.explanation, '');
+      if (content.analogy) lines.push(`**Analogy:** ${content.analogy}`, '');
+      if (content.keyPoints?.length) lines.push('**Key points:**', ...content.keyPoints.map((k) => `- ${k}`), '');
+      for (const ex of content.examples ?? []) {
+        lines.push(`**Example — ${ex.title}:** ${ex.body}`);
+        if (ex.code) lines.push('```' + (ex.language || ''), ex.code, '```');
+        lines.push('');
+      }
+      if (content.formulas?.length) lines.push('**Formulas:**', ...content.formulas.map((f) => `- ${f.name}: ${f.expression} — ${f.meaning}`), '');
+      if (content.commonMistakes?.length) lines.push('**Common mistakes:**', ...content.commonMistakes.map((c) => `- ${c.mistake} → ${c.correction}`), '');
+
+      const it = byTopic.get(t.id);
+      if (it?.mcqs.length) {
+        lines.push('**Quiz:**', '');
+        it.mcqs.forEach((q, i) => {
+          lines.push(`${i + 1}. ${q.question}`);
+          q.options.forEach((opt, j) => lines.push(`   ${mcqLetter(j)}. ${opt}`));
+          lines.push(`   *Answer: ${mcqLetter(q.correctIndex)} — ${q.explanation}*`, '');
+        });
+      }
+      if (it?.flashcards.length) {
+        lines.push('**Flashcards:**', ...it.flashcards.map((f) => `- Q: ${f.front} / A: ${f.back}`), '');
+      }
+      if (content.summary) lines.push(`> ${content.summary}`, '');
+    }
+  }
+  lines.push('---', '', `Exported from GyanSetu on ${new Date().toLocaleDateString()}`);
+  return lines.join('\n');
+}
+
+/** A readable file name GyanSetu writes for this pack, e.g. "Geography_Learning_Pack.md". */
+function packFileName(title: string): string {
+  const safe = title.trim().replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '') || 'Learning_Pack';
+  return `${safe}_Learning_Pack.md`;
+}
+
+/** Writes the pack's current content to a real file the student can save/share. */
+export async function writePackFile(packId: string): Promise<{ uri: string; filename: string }> {
+  const [markdown, pack] = await Promise.all([
+    exportPackContent(packId),
+    db.getFirstAsync<{ title: string }>('SELECT title FROM lp_packs WHERE pack_id = ?', packId),
+  ]);
+  const filename = packFileName(pack?.title ?? 'Learning Pack');
+  const file = new File(Paths.cache, filename);
+  file.write(markdown);
+  return { uri: file.uri, filename };
+}
+
+/**
+ * "Download" a pack: writes its current content to a real file and hands it to the OS
+ * share/save sheet. Works the same for a newly generated pack, a just-updated/customized
+ * one, or any existing downloaded pack — it always reads whatever is on the phone right
+ * now, so there's no stale-content risk. Throws if sharing isn't available on this device.
+ */
+export async function sharePackFile(packId: string): Promise<void> {
+  const { uri, filename } = await writePackFile(packId);
+  if (!(await Sharing.isAvailableAsync())) {
+    throw new Error('Saving files is not available on this device.');
+  }
+  await Sharing.shareAsync(uri, { mimeType: 'text/markdown', dialogTitle: filename });
 }

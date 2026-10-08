@@ -24,7 +24,8 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-router",
-      "expo-video"
+      "expo-video",
+      "expo-sharing"
     ],
     "scheme": "gyansetu"
   }

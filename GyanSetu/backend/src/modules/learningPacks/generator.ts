@@ -4,6 +4,7 @@ import { pool, queryOne, withTransaction, type Db } from '../../db/pool';
 import { HttpError, conflict, notFound } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { aiConfigured, complete } from '../ai/providers';
+import { createTask } from '../tasks/taskManager';
 import { hasLearningHistory, learnerProfileText, learningEvidence } from './history';
 import {
   ModuleReply,
@@ -34,6 +35,9 @@ const TOPIC_ATTEMPTS = 3;
 /** Outline generation has no pending row to retry later (it runs inline in the create-pack
  * request), so it gets its own small retry budget against transient "AI busy" responses. */
 const OUTLINE_ATTEMPTS = 3;
+/** Longest a single outline attempt will wait out Groq's own retry-after before giving up,
+ * so a large provider-issued wait can't hang the create-pack HTTP response for minutes. */
+const OUTLINE_MAX_WAIT_MS = 8_000;
 /** Module calls in flight across all generations: keeps us inside provider rate limits. */
 /** Configurable: see PACK_MODULE_CONCURRENCY in config/env.ts for why this defaults low. */
 const MAX_PARALLEL_MODULE_CALLS = env.PACK_MODULE_CONCURRENCY;
@@ -89,31 +93,48 @@ async function generateOutline(input: {
 }) {
   // Runs synchronously inside the create-pack HTTP request (there's no pending row yet to
   // retry later, unlike topics/modules), so a single transient "AI busy" must not surface
-  // as a hard failure to the student — retry here, sharing withSlot's pacing clock with
-  // every other call so this doesn't collide with topic generation either.
+  // as a hard failure to the student. Deliberately does NOT go through withSlot's shared
+  // pacing clock: that clock is pushed forward by BACKGROUND topic generation for other,
+  // unrelated packs (up to MAX_SHARED_WAIT_MS = 60s), which has nothing to do with whether
+  // Groq can actually take this call right now — sharing it meant outline creation failed
+  // instantly any time background work elsewhere had recently hit a snag, even while Groq
+  // itself had full headroom (observed 2026-10-08: consistent AI_BUSY with retryAfterMs
+  // counting down from a stale shared-clock push, while a direct equivalent call to Groq
+  // succeeded immediately). This calls Groq directly and only waits out ITS OWN retry-after,
+  // capped short so the HTTP response the student is watching never hangs for minutes.
   let result: Awaited<ReturnType<typeof complete>> | undefined;
   let lastErr: unknown;
   for (let attempt = 1; attempt <= OUTLINE_ATTEMPTS; attempt++) {
     try {
-      result = await withSlot(() =>
-        complete({
-          system: OUTLINE_SYSTEM,
-          user: outlineUser(input),
-          schema: OUTLINE_JSON_SCHEMA,
-          schemaName: 'learning_pack_outline',
-          maxTokens: 8000,
-          timeoutMs: 90_000,
-        }),
-      );
+      result = await complete({
+        system: OUTLINE_SYSTEM,
+        user: outlineUser(input),
+        schema: OUTLINE_JSON_SCHEMA,
+        schemaName: 'learning_pack_outline',
+        maxTokens: 8000,
+        timeoutMs: 90_000,
+      });
       break;
     } catch (err) {
       lastErr = err;
       const busy = err instanceof HttpError && err.code === 'AI_BUSY';
       logger.warn({ attempt, err: err instanceof Error ? err.message : String(err) }, 'outline generation failed');
-      if (!busy) await sleep(1_500 * attempt);
+      if (busy) {
+        const retryAfterMs = (err as HttpError).details as { retryAfterMs?: number } | undefined;
+        const wait = retryAfterMs?.retryAfterMs ?? 0;
+        if (wait > OUTLINE_MAX_WAIT_MS) break; // don't hang the HTTP response on a long provider-issued wait
+        if (wait > 0) await sleep(wait);
+      } else {
+        await sleep(1_500 * attempt);
+      }
     }
   }
-  if (!result) throw lastErr instanceof HttpError ? lastErr : new HttpError(502, 'AI_UNAVAILABLE', 'Could not design this learning pack right now. Please try again.');
+  if (!result) {
+    if (lastErr instanceof HttpError && lastErr.code === 'AI_BUSY') {
+      throw new HttpError(503, 'AI_BUSY', 'The AI is handling a lot of requests right now. Please try again in a minute.', lastErr.details);
+    }
+    throw lastErr instanceof HttpError ? lastErr : new HttpError(502, 'AI_UNAVAILABLE', 'Could not design this learning pack right now. Please try again.');
+  }
   if (result.kind === 'refused') {
     throw new HttpError(422, 'NOT_LEARNABLE', "I can't create a learning pack for that. Try a different subject.");
   }
@@ -304,6 +325,11 @@ export async function requestPack(input: GenerateInput): Promise<{ packId: strin
   });
 
   void startGeneration(packId, 1);
+  // A pointer row, not a second retry/progress engine: this module already retries and
+  // tracks modules_done/modules_total itself (see withSlot/runGeneration above). The task
+  // row just makes this generation show up in the student's unified "background work"
+  // list (GET /v1/tasks); tasks.routes.ts lazily mirrors status from here on read.
+  await createTask(input.userId, 'LEARNING_PACK_GENERATION', { packId, version: 1 });
   return { packId, version: 1, reused: false };
 }
 
@@ -329,8 +355,8 @@ async function insertVersion(
 
 /** Generates an improved next version, keeping topic keys stable so progress carries over. */
 export async function requestNewVersion(packId: string, changeRequest?: string) {
-  const pack = await queryOne<{ subject: string; level: Level; source: string; duration_days: number | null; daily_minutes: number | null; goal: string | null }>(
-    'SELECT subject, level, source, duration_days, daily_minutes, goal FROM generated_packs WHERE id = $1',
+  const pack = await queryOne<{ subject: string; level: Level; source: string; duration_days: number | null; daily_minutes: number | null; goal: string | null; created_by: string | null }>(
+    'SELECT subject, level, source, duration_days, daily_minutes, goal, created_by FROM generated_packs WHERE id = $1',
     [packId],
   );
   if (!pack) throw notFound('Learning pack');
@@ -364,6 +390,7 @@ export async function requestNewVersion(packId: string, changeRequest?: string) 
     await insertVersion(db, packId, version, outline, { model, inputTokens, outputTokens, changeNotes: changeRequest ?? 'Improved version' });
   });
   void startGeneration(packId, version);
+  if (pack.created_by) await createTask(pack.created_by, 'LEARNING_PACK_GENERATION', { packId, version });
   return { packId, version };
 }
 
@@ -437,19 +464,50 @@ const waiting: (() => void)[] = [];
  */
 let nextCallAt = 0;
 const DEFAULT_BUSY_WAIT_MS = 45_000;
+/**
+ * Hard ceiling on how far a single busy response may push the shared clock, regardless of
+ * what the provider's retry-after says. Observed empirically (2026-10-08) under sustained
+ * real load: Groq returned retry-after: 234s. Honouring that verbatim would make EVERY
+ * other call sharing this clock — including unrelated packs' topic generation — wait up to
+ * four minutes because of one response. Clamping it means the clock still backs off
+ * meaningfully, but never by more than this.
+ */
+const MAX_SHARED_WAIT_MS = 60_000;
+/**
+ * Verified empirically against a real Groq key (2026-10-08): the per-minute token budget
+ * is a rolling window of ACTUAL usage, and admission for a new call checks its requested
+ * size against whatever is CURRENTLY remaining — so a background job that fires its calls
+ * back-to-back as fast as the network allows (whenever it isn't actively rate-limited) can
+ * still keep the window's remaining budget too low, too often, for an interactive request
+ * (tutor, Navigator, quiz) that happens to arrive in that moment to be admitted — even
+ * though neither side is doing anything wrong on its own. Spacing background calls out
+ * (not just reacting to 429s after the fact) lowers its average consumption RATE, which
+ * leaves more of the window free on average for interactive traffic to land in.
+ */
+const MIN_GAP_MS = env.PACK_GENERATION_MIN_GAP_MS;
 
-async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+/**
+ * Runs `fn` once this process's shared pacing slot/clock allow it. `maxWaitMs` bounds how
+ * long THIS CALL will wait for the clock specifically (default: however long it takes) — a
+ * caller that blocks an HTTP response the student is waiting on (outline generation) passes
+ * a short bound and gets back an AI_BUSY error instead of hanging if the clock's current
+ * wait exceeds it; a background caller (topic generation) can afford to wait it out.
+ */
+async function withSlot<T>(fn: () => Promise<T>, maxWaitMs = Infinity): Promise<T> {
   if (inFlight >= MAX_PARALLEL_MODULE_CALLS) await new Promise<void>((r) => waiting.push(r));
   inFlight++;
   try {
     const wait = nextCallAt - Date.now();
+    if (wait > maxWaitMs) throw new HttpError(503, 'AI_BUSY', 'The AI tutor is busy. Try again in a minute.', { retryAfterMs: wait });
     if (wait > 0) await sleep(wait);
     try {
-      return await fn();
+      const result = await fn();
+      nextCallAt = Math.max(nextCallAt, Date.now() + MIN_GAP_MS);
+      return result;
     } catch (err) {
       if (err instanceof HttpError && err.code === 'AI_BUSY') {
         const retryAfterMs = (err.details as { retryAfterMs?: number } | undefined)?.retryAfterMs;
-        nextCallAt = Date.now() + (retryAfterMs ?? DEFAULT_BUSY_WAIT_MS);
+        nextCallAt = Date.now() + Math.min(retryAfterMs ?? DEFAULT_BUSY_WAIT_MS, MAX_SHARED_WAIT_MS);
       }
       throw err;
     }
@@ -503,6 +561,11 @@ async function generateTopic(outline: Outline, moduleKey: string, topicKey: stri
       schemaName: 'learning_pack_topic',
       maxTokens: 4000,
       timeoutMs: GENERATION_TIMEOUT_MS,
+      // Runs in the background after the pack-creation request already responded; the
+      // student isn't waiting on this specific call, so it gets the tighter token cap
+      // (see GROQ_BACKGROUND_MAX_TOKENS_PER_REQUEST) that leaves room for interactive
+      // AI features to keep working while a pack generates.
+      priority: 'background',
     }),
   );
   if (result.kind === 'refused') throw new Error('model refused the topic');

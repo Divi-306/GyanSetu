@@ -17,6 +17,7 @@ import { navigatorRouter } from './modules/navigator/navigator.routes';
 import { scholarshipsRouter } from './modules/scholarships/scholarships.routes';
 import { careerRouter } from './modules/career/career.routes';
 import { adminRouter } from './modules/admin/admin.routes';
+import { tasksRouter } from './modules/tasks/tasks.routes';
 
 export function createApp() {
   const app = express();
@@ -53,6 +54,7 @@ export function createApp() {
   app.use('/v1/scholarships', scholarshipsRouter);
   app.use('/v1/career', careerRouter);
   app.use('/v1/admin', adminRouter);
+  app.use('/v1/tasks', tasksRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
